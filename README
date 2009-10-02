@@ -1,7 +1,12 @@
-Multidimensional integration ("cubature") code by Steven G. Johnson,
-based in part on code from the GNU Scientific Library (GSL) and from
-the HIntLib numeric-integration library.  Adaptive integration of one
-integrand, or a vector of integrands, is supported.
+Multidimensional integration ("cubature") code by Steven G. Johnson
+<stevenj@alum.mit.edu>, based in part on code from the GNU Scientific
+Library (GSL) by Brian Gough and others and from the HIntLib
+numeric-integration library by Rudolf Schuerer.  Adaptive integration
+of either one integrand or a vector of integrands is supported.
+
+The latest version can be downloaded from:
+
+    http://ab-initio.mit.edu/cubature/
 
  * Copyright (c) 2005-2009 Steven G. Johnson
  *
