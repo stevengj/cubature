@@ -97,3 +97,46 @@ global variables, which are not re-entrant).  If F does not need any
 additional data, you can just pass FDATA = NULL and ignore the FDATA
 argument to F.
 
+-----------------------------------------------------------------------
+Test cases:
+
+To compile a test case, just compile cubature.c while #defining
+TEST_INTEGRATOR, e.g. (on Unix or GNU/Linux) via:
+
+ cc -DTEST_INTEGRATOR -o cubature_test cubature.c -lm
+
+The usage is then:
+
+    ./cubature_test <dim> <tol> <integrand> <maxeval>
+
+where <dim> = # dimensions, <tol> = relative tolerance, <integrand> is
+0-7 for one of eight possible test integrands (see below) and
+<maxeval> is the maximum # function evaluations (0 for none, the default).
+
+The different test integrands are:
+
+0: a product of cosine functions
+1: a Gaussian integral of exp(-x^2), remapped to [0,infinity) limits
+2: volume of a hypersphere (integrating a discontinuous function!)
+3: a simple polynomial (product of coordinates)
+4: a Gaussian centered in the middle of the integration volume
+5: a sum of two Gaussians
+6: an example function by Tsuda, a product of terms with near poles
+7: a test integrand by Morokoff and Caflisch, a simple product of
+   dim-th roots of the coordinates (weakly singular at the boundary)
+
+For example:
+
+    ./cubature_test 3 1e-5 4
+
+integrates the Gaussian function (4) to a desired relative error
+tolerance of 1e-5 in 3 dimensions.  The output is:
+
+3-dim integral, tolerance = 1e-05
+integrand 4: integral = 1, est err = 9.99952e-06, true err = 2.54397e-08
+#evals = 82203
+
+Notice that it finds the integral after 82203 function evaluations
+with an estimated error of about 1e-5, but the true error (compared to
+the exact result) is much smaller (2.5e-8): the error estimation is
+typically conservative when applied to smooth functions like this.
