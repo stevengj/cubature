@@ -1,0 +1,94 @@
+Multidimensional integration ("cubature") code by Steven G. Johnson,
+based in part on code from the GNU Scientific Library (GSL) and from
+the HIntLib numeric-integration library.  Adaptive integration of one
+integrand, or a vector of integrands, is supported.
+
+ * Copyright (c) 2005-2009 Steven G. Johnson
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * Portions (see comments) based on HIntLib (also distributed under
+ * the GNU GPL, v2 or later), copyright (c) 2002-2005 Rudolf Schuerer.
+ *      (http://www.cosy.sbg.ac.at/~rschuer/hintlib/)
+ * 
+ * Portions (see comments) based on GNU GSL (also distributed under
+ * the GNU GPL, v2 or later), copyright (c) 1996-2000 Brian Gough.
+ *      (http://www.gnu.org/software/gsl/)
+
+The basic algorithm is based on the adaptive cubature described in
+ 
+     A. C. Genz and A. A. Malik, "An adaptive algorithm for numeric
+     integration over an N-dimensional rectangular region,"
+     J. Comput. Appl. Math. 6 (4), 295-302 (1980).
+
+and subsequently extended to integrating a vector of integrands in
+
+     J. Berntsen, T. O. Espelid, and A. Genz, "An adaptive algorithm
+     for the approximate calculation of multiple integrals,"
+     ACM Trans. Math. Soft. 17 (4), 437-451 (1991).
+
+Note, however, that we do not use any of code from the above authors
+(in part because their code is Fortran 77, but mostly because it is
+under the restrictive ACM copyright license).  I did make use of some
+GPL code from Rudolf Schuerer's HIntLib and from the GNU Scientific
+Library as noted above, however.
+
+-----------------------------------------------------------------------
+Usage:
+
+You should compile cubature.c and link it with your program, and
+#include the header file cubature.h.
+
+The central subroutine you will be calling is:
+
+int adapt_integrate(unsigned fdim, integrand f, void *fdata,
+                    unsigned dim, const double *xmin, const double *xmax,
+                    unsigned maxEval, double reqAbsError, double reqRelError,
+                    double *val, double *err);
+
+This integrates a function F(x), returning a vector of FDIM
+integrands, where x is a DIM-dimensional vector ranging from XMIN to
+XMAX (i.e. in a hypercube XMIN[i] <= x[i] <= XMAX[i]).
+
+MAXEVAL specifies a maximum number of function evaluations (0 for no
+limit).  Otherwise, the integration stops when the estimated |error|
+is less than REQABSERROR (the absolute error requested), or when the
+estimated |error| is less than REQRELERROR * |integral value| (the
+relative error requested).
+
+VAL and ERR are arrays of length FDIM, which upon return are the
+computed integral values and estimated errors, respectively.  (The
+estimated errors are based on an embedded cubature rule of lower
+order; for smooth functions, this estimate is usually conservative.)
+
+The return value of adapt_integrate is 0 on success and nonzero if
+there was an error (currently, only out-of-memory situations).
+
+The integrand function F should be a function of the form:
+
+void F(unsigned ndim, const double *x, void *fdata,
+       unsigned fdim, double *fval);
+
+Here, the input is an array X of length NDIM (the point to be
+evaluated), the output is an array FVAL of length FDIM (the vector of
+function values at the point X).
+
+The FDATA argument of F is equal to the FDATA argument passed to
+adapt_integrate -- this can be used by the caller to pass any
+additional information through to F as needed (rather than using
+global variables, which are not re-entrant).  If F does not need any
+additional data, you can just pass FDATA = NULL and ignore the FDATA
+argument to F.
+
