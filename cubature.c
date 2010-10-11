@@ -1,6 +1,6 @@
 /* Adaptive multidimensional integration of a vector of integrands.
  *
- * Copyright (c) 2005-2009 Steven G. Johnson
+ * Copyright (c) 2005-2010 Steven G. Johnson
  *
  * Portions (see comments) based on HIntLib (also distributed under
  * the GNU GPL, v2 or later), copyright (c) 2002-2005 Rudolf Schuerer.
@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <math.h>
 #include <limits.h>
 #include <float.h>
@@ -72,11 +73,6 @@
 
    * Putting these routines into the GNU GSL library would be nice.
 
-   * It would be very nice to implement some kind of parallelization
-     scheme.  e.g. at the very least, within a given cubature rule
-     one could call the integrand with an array of points to evaluate
-     (which the integrand could then farm out to separate threads etc.).
-
    * For high-dimensional integrals, it would be nice to implement
      a sparse-grid cubature scheme using Clenshaw-Curtis quadrature.
      Currently, for dimensions > 7 or so, quasi Monte Carlo methods win.
@@ -86,6 +82,8 @@
      nice to implement this, at least as an option (although I seem
      to remember trying it once and it made the number of evaluations
      substantially worse for my test integrands).
+
+   * More checks for out-of-memory situations (malloc failure).
 
    * In the cubature-rule evaluation for each hypercube, I end up
      allocating and then deallocating a bunch of temporary arrays
@@ -198,11 +196,12 @@ static void cut_region(region *R, region *R2)
 }
 
 typedef struct rule_s {
-     unsigned dim;              /* the dimensionality */
+     unsigned dim, fdim;         /* the dimensionality & number of functions */
      unsigned num_points;       /* number of evaluation points */
      unsigned (*evalError)(struct rule_s *r,
-			   unsigned fdim, integrand f, void *fdata,
-			   const hypercube *h, esterr *ee);
+			   unsigned fdim, integrand_v f, void *fdata,
+			   const hypercube *h, esterr *ee,
+			   double *pts, double *vals); /* scratch */
      void (*destroy)(struct rule_s *r);
 } rule;
 
@@ -212,10 +211,11 @@ static void destroy_rule(rule *r)
      free(r);
 }
 
-static region eval_region(region R, integrand f, void *fdata, rule *r)
+static region eval_region(region R, integrand_v f, void *fdata, rule *r,
+			  double *pts, double *vals)
 {
      int k;
-     R.splitDim = r->evalError(r, R.fdim, f, fdata, &R.h, R.ee);
+     R.splitDim = r->evalError(r, R.fdim, f, fdata, &R.h, R.ee, pts, vals);
      R.errmax = R.ee[0].err;
      for (k = 1; k < R.fdim; ++k)
 	  if (R.ee[k].err > R.errmax) R.errmax = R.ee[k].err;
@@ -264,15 +264,14 @@ static unsigned ls0(unsigned n)
 }
 
 /**
- *  Evaluate the integral on all 2^n points (+/-r,...+/-r)
+ *  Evaluate the integration points for all 2^n points (+/-r,...+/-r)
  *
  *  A Gray-code ordering is used to minimize the number of coordinate updates
- *  in p.
+ *  in p, although this doesn't matter as much now that we are saving all pts.
  */
-static void evalR_Rfs(double *sum, unsigned fdim, integrand f, void *fdata, unsigned dim, double *p, const double *c, const double *r)
+static void evalR_Rfs(double *pts, unsigned dim, double *p, const double *c, const double *r)
 {
-     double *val;
-     unsigned i,j;
+     unsigned i;
      unsigned signs = 0; /* 0/1 bit = +/- for corresponding element of r[] */
 
      /* We start with the point where r is ADDed in every coordinate
@@ -280,15 +279,11 @@ static void evalR_Rfs(double *sum, unsigned fdim, integrand f, void *fdata, unsi
      for (i = 0; i < dim; ++i)
 	  p[i] = c[i] + r[i];
 
-     val = (double *) malloc(sizeof(double) * fdim);
-     for (j = 0; j < fdim; ++j) sum[j] = 0.0;
-
      /* Loop through the points in Gray-code ordering */
      for (i = 0;; ++i) {
 	  unsigned mask, d;
 
-	  f(dim, p, fdata, fdim, val);
-	  for (j = 0; j < fdim; ++j) sum[j] += val[j];
+	  memcpy(pts, p, sizeof(double) * dim); pts += dim;
 
 	  d = ls0(i);	/* which coordinate to flip */
 	  if (d >= dim)
@@ -299,95 +294,52 @@ static void evalR_Rfs(double *sum, unsigned fdim, integrand f, void *fdata, unsi
 	  signs ^= mask;
 	  p[d] = (signs & mask) ? c[d] - r[d] : c[d] + r[d];
      }
-     free(val);
 }
 
-static void evalRR0_0fs(double *sum, unsigned fdim, integrand f, void *fdata, unsigned dim, double *p, const double *c, const double *r)
+static void evalRR0_0fs(double *pts, unsigned dim, double *p, const double *c, const double *r)
 {
-     unsigned i, j, k;
-     double *val;
-
-     val = (double *) malloc(sizeof(double) * fdim);
-     for (k = 0; k < fdim; ++k) sum[k] = 0.0;
+     unsigned i, j;
 
      for (i = 0; i < dim - 1; ++i) {
 	  p[i] = c[i] - r[i];
 	  for (j = i + 1; j < dim; ++j) {
 	       p[j] = c[j] - r[j];
-	       f(dim, p, fdata, fdim, val);
-	       for (k = 0; k < fdim; ++k) sum[k] += val[k];
+	       memcpy(pts, p, sizeof(double) * dim); pts += dim;
 	       p[i] = c[i] + r[i];
-	       f(dim, p, fdata, fdim, val);
-	       for (k = 0; k < fdim; ++k) sum[k] += val[k];
+	       memcpy(pts, p, sizeof(double) * dim); pts += dim;
 	       p[j] = c[j] + r[j];
-	       f(dim, p, fdata, fdim, val);
-	       for (k = 0; k < fdim; ++k) sum[k] += val[k];
+	       memcpy(pts, p, sizeof(double) * dim); pts += dim;
 	       p[i] = c[i] - r[i];
-	       f(dim, p, fdata, fdim, val);
-	       for (k = 0; k < fdim; ++k) sum[k] += val[k];
+	       memcpy(pts, p, sizeof(double) * dim); pts += dim;
 
 	       p[j] = c[j];	/* Done with j -> Restore p[j] */
 	  }
 	  p[i] = c[i];		/* Done with i -> Restore p[i] */
      }
-     free(val);
 }
 
-static unsigned evalR0_0fs4d(unsigned fdim, integrand f, void *fdata, unsigned dim, double *p, const double *c, double *sum0, const double *r1, double *sum1, const double *r2, double *sum2)
+static void evalR0_0fs4d(double *pts, unsigned dim, double *p, const double *c,
+			 const double *r1, const double *r2)
 {
-     double maxdiff = 0;
-     unsigned i, j, dimDiffMax = 0;
-     double *val, *val0, *D;
-     double ratio = r1[0] / r2[0];
+     unsigned i;
 
-     val = (double *) malloc(sizeof(double) * fdim * 3);
-     val0 = val + fdim; D = val0 + fdim;
-
-     ratio *= ratio;
-     f(dim, p, fdata, fdim, val0);
-     for (j = 0; j < fdim; ++j) sum0[j] += val0[j];
+     memcpy(pts, p, sizeof(double) * dim); pts += dim;
 
      for (i = 0; i < dim; i++) {
-	  double diff;
-
 	  p[i] = c[i] - r1[i];
-	  f(dim, p, fdata, fdim, val);
-	  for (j = 0; j < fdim; ++j) {
-	       sum1[j] += val[j];
-	       D[j] = val[j];
-	  }
+	  memcpy(pts, p, sizeof(double) * dim); pts += dim;
 
 	  p[i] = c[i] + r1[i];
-	  f(dim, p, fdata, fdim, val);
-	  for (j = 0; j < fdim; ++j) {
-	       sum1[j] += val[j];
-	       D[j] += val[j] - 2*val0[j];
-	  }
+	  memcpy(pts, p, sizeof(double) * dim); pts += dim;
 
 	  p[i] = c[i] - r2[i];
-	  f(dim, p, fdata, fdim, val);
-	  for (j = 0; j < fdim; ++j) {
-	       sum2[j] += val[j];
-	       D[j] -= ratio * val[j];
-	  }
+	  memcpy(pts, p, sizeof(double) * dim); pts += dim;
 
 	  p[i] = c[i] + r2[i];
-	  f(dim, p, fdata, fdim, val);
-	  diff = 0;
-	  for (j = 0; j < fdim; ++j) {
-	       sum2[j] += val[j];
-	       diff += fabs(D[j] - ratio * (val[j] - 2*val0[j]));
-	  }
+	  memcpy(pts, p, sizeof(double) * dim); pts += dim;
 
 	  p[i] = c[i];
-
-	  if (diff > maxdiff) {
-	       maxdiff = diff;
-	       dimDiffMax = i;
-	  }
      }
-     free(val);
-     return dimDiffMax;
 }
 
 #define num0_0(dim) (1U)
@@ -430,7 +382,7 @@ static void destroy_rule75genzmalik(rule *r_)
      free(r->p);
 }
 
-static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand f, void *fdata, const hypercube *h, esterr *ee)
+static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, esterr *ee, double *pts, double *vals)
 {
      /* lambda2 = sqrt(9/70), lambda4 = sqrt(9/10), lambda5 = sqrt(9/19) */
      const double lambda2 = 0.3585685828003180919906451539079374954541;
@@ -440,17 +392,13 @@ static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand f, 
      const double weight4 = 200. / 19683.;
      const double weightE2 = 245. / 486.;
      const double weightE4 = 25. / 729.;
+     const double ratio = (lambda2 * lambda2) / (lambda4 * lambda4);
 
      rule75genzmalik *r = (rule75genzmalik *) r_;
-     unsigned i, j, dimDiffMax, dim = r_->dim;
-     double *sums, *sum1, *sum2, *sum3, *sum4, *sum5;
+     unsigned i, j, dimDiffMax = 0, dim = r_->dim, npts = 0;
+     double *diff, maxdiff = 0;
      const double *center = h->data;
      const double *halfwidth = h->data + dim;
-
-     sums = (double *) malloc(sizeof(double) * fdim * 5);
-     sum1 = sums; sum2 = sum1 + fdim; sum3 = sum2 + fdim; sum4 = sum3 + fdim;
-     sum5 = sum4 + fdim;
-     for (j = 0; j < fdim; ++j) sum1[j] = sum2[j] = sum3[j] = 0.0;
 
      for (i = 0; i < dim; ++i)
 	  r->p[i] = center[i];
@@ -460,38 +408,86 @@ static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand f, 
      for (i = 0; i < dim; ++i)
 	  r->widthLambda[i] = halfwidth[i] * lambda4;
 
-     /* Evaluate function in the center, in f(lambda2,0,...,0) and
-        f(lambda3=lambda4, 0,...,0).  Estimate dimension with largest error */
-     dimDiffMax = evalR0_0fs4d(fdim, f, fdata, dim, r->p, center, sum1, r->widthLambda2, sum2, r->widthLambda, sum3);
+     /* Evaluate points in the center, in (lambda2,0,...,0) and
+        (lambda3=lambda4, 0,...,0).  */
+     evalR0_0fs4d(pts + npts*dim, dim, r->p, center, r->widthLambda2, r->widthLambda);
+     npts += num0_0(dim) + 2 * numR0_0fs(dim);
 
-     /* Calculate sum4 for f(lambda4, lambda4, 0, ...,0) */
-     evalRR0_0fs(sum4, fdim, f, fdata, dim, r->p, center, r->widthLambda);
+     /* Calculate points for (lambda4, lambda4, 0, ...,0) */
+     evalRR0_0fs(pts + npts*dim, dim, r->p, center, r->widthLambda);
+     npts += numRR0_0fs(dim);
 
-     /* Calculate sum5 for f(lambda5, lambda5, ..., lambda5) */
+     /* Calculate points for (lambda5, lambda5, ..., lambda5) */
      for (i = 0; i < dim; ++i)
 	  r->widthLambda[i] = halfwidth[i] * lambda5;
-     evalR_Rfs(sum5, fdim, f, fdata, dim, r->p, center, r->widthLambda);
+     evalR_Rfs(pts + npts*dim, dim, r->p, center, r->widthLambda);
+     npts += numR_Rfs(dim);
 
-     /* Calculate fifth and seventh order results */
-     
+     /* Evaluate the integrand function(s) at all the points */
+     f(dim, npts, pts, fdata, fdim, vals);
+
+     /* we are done with the points, and so we can re-use the pts
+	array to store the maximum difference diff[i] in each dimension */
+     diff = pts;
+     for (i = 0; i < dim; ++i) diff[i] = 0;
+
      for (j = 0; j < fdim; ++j) {
 	  double result, res5th;
-	  result = h->vol * (r->weight1 * sum1[j] + weight2 * sum2[j] + r->weight3 * sum3[j] + weight4 * sum4[j] + r->weight5 * sum5[j]);
-	  res5th = h->vol * (r->weightE1 * sum1[j] + weightE2 * sum2[j] + r->weightE3 * sum3[j] + weightE4 * sum4[j]);
+	  double val0, sum2=0, sum3=0, sum4=0, sum5=0;
+	  unsigned k, k0 = 0;
+
+	  /* accumulate j-th function values 
+	        NOTE: this relies on the ordering of the eval functions
+	              above, as well as on the internal structure of
+	              the evalR0_0fs4d function */
+
+	  val0 = vals[0]; /* central point */
+	  k0 += 1;
+
+	  for (k = 0; k < 4*dim; k += 4) {
+	       double v0 = vals[k0 + k];
+	       double v1 = vals[(k0 + k) + 1];
+	       double v2 = vals[(k0 + k) + 2];
+	       double v3 = vals[(k0 + k) + 3];
+	       
+	       sum2 += v0 + v1;
+	       sum3 += v2 + v3;
+
+	       diff[k] += fabs(v0 + v1 - 2*val0 - ratio * (v2 + v3 - 2*val0));
+	  }
+	  k0 += k;
+
+	  for (k = 0; k < numRR0_0fs(dim); ++k)
+	       sum4 += vals[k0 + k];
+	  k0 += k;
+
+	  for (k = 0; k < numR_Rfs(dim); ++k)
+	       sum5 += vals[k0 + k];
+
+	  /* Calculate fifth and seventh order results */
+	  result = h->vol * (r->weight1 * val0 + weight2 * sum2 + r->weight3 * sum3 + weight4 * sum4 + r->weight5 * sum5);
+	  res5th = h->vol * (r->weightE1 * val0 + weightE2 * sum2 + r->weightE3 * sum3 + weightE4 * sum4);
 	  
 	  ee[j].val = result;
 	  ee[j].err = fabs(res5th - result);
+
+	  vals += npts;
      }
 
-     free(sums);
+     /* figure out dimension to split: */
+     for (i = 0; i < dim; ++i) if (diff[i] > maxdiff) {
+	       maxdiff = diff[i];
+	       dimDiffMax = i;
+	  }
      return dimDiffMax;
 }
 
-static rule *make_rule75genzmalik(unsigned dim)
+static rule *make_rule75genzmalik(unsigned dim, unsigned fdim)
 {
      rule75genzmalik *r;
 
      if (dim < 2) return 0; /* this rule does not support 1d integrals */
+     if (fdim == 0) return 0; /* should never be called */
 
      /* Because of the use of a bit-field in evalR_Rfs, we are limited
 	to be < 32 dimensions (or however many bits are in unsigned).
@@ -531,8 +527,9 @@ static rule *make_rule75genzmalik(unsigned dim)
    GNU GSL (which in turn is based on QUADPACK). */
 
 static unsigned rule15gauss_evalError(rule *r,
-				      unsigned fdim, integrand f, void *fdata,
-				      const hypercube *h, esterr *ee)
+				     unsigned fdim, integrand_v f, void *fdata,
+				      const hypercube *h, esterr *ee,
+				      double *pts, double *vals)
 {
      /* Gauss quadrature weights and kronrod quadrature abscissae and
 	weights as evaluated with 80 decimal digit arithmetic by
@@ -570,103 +567,88 @@ static unsigned rule15gauss_evalError(rule *r,
      const double center = h->data[0];
      const double halfwidth = h->data[1];
 
-     double *f_center, *val, *fv1, *fv2;
-     double *result_gauss, *result_kronrod, *result_abs;
      unsigned j, k;
-     double *scratch = (double *) malloc(sizeof(double) * fdim * 19);
-     f_center = scratch; val = scratch + fdim;
-     result_gauss = val + fdim; result_kronrod = result_gauss + fdim;
-     result_abs = result_kronrod + fdim;
-     fv1 = result_abs + fdim; fv2 = fv1 + 7*fdim;
+     unsigned npts = 0;
 
-     f(1, &center, fdata, fdim, f_center);
-     for (k = 0; k < fdim; ++k) {
-	  result_gauss[k] = f_center[k] * wg[n/2 - 1];
-	  result_kronrod[k] = f_center[k] * wgk[n - 1];
-	  result_abs[k] = fabs(result_kronrod[k]);
-     }
-     
+     pts[npts++] = center;
+
      for (j = 0; j < (n - 1) / 2; ++j) {
 	  int j2 = 2*j + 1;
-	  double x, w = halfwidth * xgk[j2];
-
-	  x = center - w; 
-	  f(1, &x, fdata, fdim, val);
-	  for (k = 0; k < fdim; ++k) {
-	       fv1[j2*fdim + k] = val[k];
-	       result_gauss[k] += wg[j] * val[k];
-	       result_kronrod[k] += wgk[j2] * val[k];
-	       result_abs[k] += wgk[j2] * fabs(val[k]);
-	  }
-
-	  x = center + w; 
-	  f(1, &x, fdata, fdim, val);
-	  for (k = 0; k < fdim; ++k) {
-	       fv2[j2*fdim + k] = val[k];
-	       result_gauss[k] += wg[j] * val[k];
-	       result_kronrod[k] += wgk[j2] * val[k];
-	       result_abs[k] += wgk[j2] * fabs(val[k]);
-	  }
+	  double w = halfwidth * xgk[j2];
+	  pts[npts++] = center - w;
+	  pts[npts++] = center + w;
      }
-
      for (j = 0; j < n/2; ++j) {
 	  int j2 = 2*j;
-	  double x, w = halfwidth * xgk[j2];
-
-	  x = center - w; 
-	  f(1, &x, fdata, fdim, val);
-	  for (k = 0; k < fdim; ++k) {
-	       fv1[j2*fdim + k] = val[k];
-	       result_kronrod[k] += wgk[j2] * val[k];
-	       result_abs[k] += wgk[j2] * fabs(val[k]);
-	  }
-
-	  x = center + w; 
-	  f(1, &x, fdata, fdim, val);
-	  for (k = 0; k < fdim; ++k) {
-	       fv2[j2*fdim + k] = val[k];
-	       result_kronrod[k] += wgk[j2] * val[k];
-	       result_abs[k] += wgk[j2] * fabs(val[k]);
-	  }
+	  double w = halfwidth * xgk[j2];
+	  pts[npts++] = center - w;
+	  pts[npts++] = center + w;
      }
 
-     /* compute result and error estimate: */
+     f(1, npts, pts, fdata, fdim, vals);
+     
      for (k = 0; k < fdim; ++k) {
+	  double result_gauss = vals[0] * wg[n/2 - 1];
+	  double result_kronrod = vals[0] * wgk[n - 1];
+	  double result_abs = fabs(result_kronrod);
 	  double result_asc, mean, err;
 
-	  ee[k].val = result_kronrod[k] * halfwidth;
+	  /* accumulate integrals */
+	  npts = 1;
+	  for (j = 0; j < (n - 1) / 2; ++j) {
+	       int j2 = 2*j + 1;
+	       double v = vals[npts] + vals[npts+1];
+	       result_gauss += wg[j] * v;
+	       result_kronrod += wgk[j2] * v;
+	       result_abs += wgk[j2] * (fabs(vals[npts]) + fabs(vals[npts+1]));
+	       npts += 2;
+	  }
+	  for (j = 0; j < n/2; ++j) {
+	       int j2 = 2*j;
+	       result_kronrod += wgk[j2] * (vals[npts] + vals[npts+1]);
+	       result_abs += wgk[j2] * (fabs(vals[npts]) + fabs(vals[npts+1]));
+	       npts += 2;
+	  }
 
-	  mean = result_kronrod[k] * 0.5;
-	  result_asc = wgk[n - 1] * fabs(f_center[k] - mean);
+	  /* integration result */
+	  ee[k].val = result_kronrod * halfwidth;
+
+	  /* error estimate 
+	     (from GSL, probably dates back to QUADPACK
+	      ... not completely clear to me why we don't just use
+	          fabs(result_kronrod - result_gauss) * halfwidth */
+	  mean = result_kronrod * 0.5;
+	  result_asc = wgk[n - 1] * fabs(vals[0] - mean);
 	  for (j = 0; j < n - 1; ++j)
-	       result_asc += wgk[j] * (fabs(fv1[j*fdim+k]-mean) 
-				       + fabs(fv2[j*fdim+k]-mean));
-	  err = fabs(result_kronrod[k] - result_gauss[k]) * halfwidth;
-	  result_abs[k] *= halfwidth;
+	       result_asc += wgk[j] * (fabs(vals[2*j+1]-mean) 
+				       + fabs(vals[2*j+2]-mean));
+	  err = fabs(result_kronrod - result_gauss) * halfwidth;
+	  result_abs *= halfwidth;
 	  result_asc *= halfwidth;
 	  if (result_asc != 0 && err != 0) {
 	       double scale = pow((200 * err / result_asc), 1.5);
-	       if (scale < 1)
-		    err = result_asc * scale;
-	       else
-		    err = result_asc;
+	       err = (scale < 1) ? result_asc * scale : result_asc;
 	  }
-	  if (result_abs[k] > DBL_MIN / (50 * DBL_EPSILON)) {
-	       double min_err = 50 * DBL_EPSILON * result_abs[k];
-	       if (min_err > err)
-		    err = min_err;
+	  if (result_abs > DBL_MIN / (50 * DBL_EPSILON)) {
+	       double min_err = 50 * DBL_EPSILON * result_abs;
+	       if (min_err > err) err = min_err;
 	  }
 	  ee[k].err = err;
+
+	  /* increment val to point to next batch of results */
+	  vals += npts;
      }
 
-     free(scratch);
      return 0; /* no choice but to divide 0th dimension */
 }
 
-static rule *make_rule15gauss(unsigned dim)
+static rule *make_rule15gauss(unsigned dim, unsigned fdim)
 {
      rule *r;
+
      if (dim != 1) return 0; /* this rule is only for 1d integrals */
+     if (fdim == 0) return 0; /* should never be called */
+
      r = (rule *) malloc(sizeof(rule));
      if (!r) return 0;
      r->dim = dim;
@@ -786,7 +768,7 @@ static heap_item heap_pop(heap *h)
 
 /* adaptive integration, analogous to adaptintegrator.cpp in HIntLib */
 
-static int ruleadapt_integrate(rule *r, unsigned fdim, integrand f, void *fdata, const hypercube *h, unsigned maxEval, double reqAbsError, double reqRelError, double *val, double *err)
+static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, unsigned maxEval, double reqAbsError, double reqRelError, double *val, double *err, double *pts, double *vals)
 {
      unsigned maxIter;		/* maximum number of adaptive subdivisions */
      heap regions;
@@ -803,7 +785,8 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand f, void *fdata,
 
      regions = heap_alloc(1, fdim);
 
-     heap_push(&regions, eval_region(make_region(h, fdim), f, fdata, r));
+     heap_push(&regions, eval_region(make_region(h, fdim), f, fdata, r,
+				     pts, vals));
      /* another possibility is to specify some non-adaptive subdivisions: 
 	if (initialRegions != 1)
 	   partition(h, initialRegions, EQUIDISTANT, &regions, f,fdata, r); */
@@ -819,8 +802,8 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand f, void *fdata,
 	  }
 	  R = heap_pop(&regions); /* get worst region */
 	  cut_region(&R, &R2);
-	  heap_push(&regions, eval_region(R, f, fdata, r));
-	  heap_push(&regions, eval_region(R2, f, fdata, r));
+	  heap_push(&regions, eval_region(R, f, fdata, r, pts, vals));
+	  heap_push(&regions, eval_region(R2, f, fdata, r, pts, vals));
      }
 
      /* re-sum integral and errors */
@@ -839,23 +822,77 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand f, void *fdata,
      return status;
 }
 
+int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata, 
+		      unsigned dim, const double *xmin, const double *xmax, 
+		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		      double *val, double *err)
+{
+     rule *r;
+     hypercube h;
+     int status;
+     double *pts; /* scratch array, num_points * dim, of points to pass to f */
+     double *vals; /* scratch array of values, num_points * fdim */
+     
+     if (fdim == 0) /* nothing to do */ return 0;
+     if (dim == 0) { /* trivial integration */
+	  f(0, 1, xmin, fdata, fdim, val);
+	  *err = 0;
+	  return 0;
+     }
+     r = dim == 1 ? make_rule15gauss(dim, fdim)
+	  : make_rule75genzmalik(dim, fdim);
+     if (r) {
+	  pts = (double *) malloc(sizeof(double) * (r->num_points*(dim+fdim)));
+	  vals = pts + r->num_points * dim;
+     }
+     else pts = 0;
+     if (!r || !pts) { 
+	  unsigned i;
+	  for (i = 0; i < fdim; ++i) {
+	       val[i] = 0;
+	       err[i] = HUGE_VAL; 
+	  }
+	  destroy_rule(r);
+	  return -2; /* ERROR */
+     }
+     h = make_hypercube_range(dim, xmin, xmax);
+     status = ruleadapt_integrate(r, fdim, f, fdata, &h,
+				  maxEval, reqAbsError, reqRelError,
+				  val, err, pts, vals);
+     destroy_hypercube(&h);
+     free(pts);
+     destroy_rule(r);
+     return status;
+}
+
+/* wrapper around non-vectorized integrand */
+typedef struct fv_data_s { integrand f; void *fdata; double *fval1; } fv_data;
+static void fv(unsigned ndim, unsigned npt,
+	       const double *x, void *d_,
+	       unsigned fdim, double *fval)
+{
+     fv_data *d = (fv_data *) d_;
+     double *fval1 = d->fval1;
+     unsigned i, k;
+     for (i = 0; i < npt; ++i) {
+	  d->f(ndim, x + i*ndim, d->fdata, fdim, fval1);
+	  for (k = 0; k < fdim; ++k) fval[k*npt + i] = fval1[k];
+     }
+}
+
 int adapt_integrate(unsigned fdim, integrand f, void *fdata, 
 		    unsigned dim, const double *xmin, const double *xmax, 
 		    unsigned maxEval, double reqAbsError, double reqRelError, 
 		    double *val, double *err)
 {
-     rule *r;
-     hypercube h;
-     int status;
+     int ret;
+     fv_data d;
+
+     if (fdim == 0) return 0; /* nothing to do */     
      
-     if (fdim == 0) /* nothing to do */ return 0;
-     if (dim == 0) { /* trivial integration */
-	  f(0, xmin, fdata, fdim, val);
-	  *err = 0;
-	  return 0;
-     }
-     r = dim == 1 ? make_rule15gauss(dim) : make_rule75genzmalik(dim);
-     if (!r) { 
+     d.f = f; d.fdata = fdata;
+     d.fval1 = (double *) malloc(sizeof(double) * fdim);
+     if (!d.fval1) {
 	  unsigned i;
 	  for (i = 0; i < fdim; ++i) {
 	       val[i] = 0;
@@ -863,13 +900,10 @@ int adapt_integrate(unsigned fdim, integrand f, void *fdata,
 	  }
 	  return -2; /* ERROR */
      }
-     h = make_hypercube_range(dim, xmin, xmax);
-     status = ruleadapt_integrate(r, fdim, f, fdata, &h,
-				  maxEval, reqAbsError, reqRelError,
-				  val, err);
-     destroy_hypercube(&h);
-     destroy_rule(r);
-     return status;
+     ret = adapt_integrate_v(fdim, fv, &d, dim, xmin, xmax, 
+			     maxEval, reqAbsError, reqRelError, val, err);
+     free(d.fval1);
+     return ret;
 }
 
 /***************************************************************************/
@@ -1068,6 +1102,12 @@ int main(int argc, char **argv)
      double tol, *val, *err;
      unsigned i, dim, maxEval;
 
+     if (argc <= 1) {
+	  fprintf(stderr, "Usage: %s [dim] [reltol] [integrand] [maxeval]\n",
+		  argv[0]);
+	  return EXIT_FAILURE;
+     }
+
      dim = argc > 1 ? atoi(argv[1]) : 2;
      tol = argc > 2 ? atof(argv[2]) : 1e-2;
      maxEval = argc > 4 ? atoi(argv[4]) : 0;
@@ -1084,7 +1124,7 @@ int main(int argc, char **argv)
 	  for (i = 0; argv[3][i]; ++i) if (argv[3][i] == '/') ++integrand_fdim;
 	  if (!integrand_fdim) {
 	       fprintf(stderr, "invalid which_integrand \"%s\"", argv[3]);
-	       exit(EXIT_FAILURE);
+	       return EXIT_FAILURE;
 	  }
 	  which_integrand = (int *) malloc(sizeof(int) * integrand_fdim);
 	  which_integrand[0] = 0;
@@ -1096,7 +1136,7 @@ int main(int argc, char **argv)
 			 which_integrand[j]*10 + argv[3][i] - '0';
 	       else {
 		    fprintf(stderr, "invalid which_integrand \"%s\"", argv[3]);
-		    exit(EXIT_FAILURE);
+		    return EXIT_FAILURE;
 	       }
 	  }
      }
@@ -1127,7 +1167,7 @@ int main(int argc, char **argv)
      free(val);
      free(which_integrand);
 
-     return 0;
+     return EXIT_SUCCESS;
 }
 
 #endif

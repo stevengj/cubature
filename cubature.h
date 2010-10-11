@@ -47,6 +47,13 @@ extern "C"
 typedef void (*integrand) (unsigned ndim, const double *x, void *,
 			   unsigned fdim, double *fval);
 
+/* a vector integrand of a vector of npt points: x[i*ndim + j] is the
+   j-th coordinate of the i-th point, and the k-th function evaluation
+   for the i-th point is returned in fval[k*npt + i]. */
+typedef void (*integrand_v) (unsigned ndim, unsigned npt,
+			     const double *x, void *,
+			     unsigned fdim, double *fval);
+
 /* Integrate the function f from xmin[dim] to xmax[dim], with at most
    maxEval function evaluations (0 for no limit), until the given
    absolute or relative error is achieved.  val returns the integral,
@@ -58,6 +65,12 @@ int adapt_integrate(unsigned fdim, integrand f, void *fdata,
 		    unsigned dim, const double *xmin, const double *xmax, 
 		    unsigned maxEval, double reqAbsError, double reqRelError, 
 		    double *val, double *err);
+
+/* as adapt_integrate, but vectorized integrand */
+int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
+		      unsigned dim, const double *xmin, const double *xmax, 
+		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		      double *val, double *err);
 
 #ifdef __cplusplus
 }  /* extern "C" */
