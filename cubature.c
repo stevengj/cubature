@@ -195,27 +195,54 @@ static void cut_region(region *R, region *R2)
      R2->ee = (esterr *) malloc(sizeof(esterr) * R2->fdim);
 }
 
+struct rule_s; /* forward declaration */
+
+typedef unsigned (*evalError_func)(struct rule_s *r,
+				   unsigned fdim, integrand_v f, void *fdata,
+				   const hypercube *h, esterr *ee);
+typedef void (*destroy_func)(struct rule_s *r);
+
+
 typedef struct rule_s {
      unsigned dim, fdim;         /* the dimensionality & number of functions */
      unsigned num_points;       /* number of evaluation points */
-     unsigned (*evalError)(struct rule_s *r,
-			   unsigned fdim, integrand_v f, void *fdata,
-			   const hypercube *h, esterr *ee,
-			   double *pts, double *vals); /* scratch */
-     void (*destroy)(struct rule_s *r);
+     double *pts; /* scratch array, num_points * dim, of points to pass to f */
+     double *vals; /* scratch array of values, num_points * fdim */
+     evalError_func evalError;
+     destroy_func destroy;
 } rule;
 
 static void destroy_rule(rule *r)
 {
-     if (r->destroy) r->destroy(r);
-     free(r);
+     if (r) {
+	  if (r->destroy) r->destroy(r);
+	  free(r->pts);
+	  free(r);
+     }
 }
 
-static region eval_region(region R, integrand_v f, void *fdata, rule *r,
-			  double *pts, double *vals)
+static rule *make_rule(size_t sz, /* >= sizeof(rule) */
+		       unsigned dim, unsigned fdim, unsigned num_points,
+		       evalError_func evalError, destroy_func destroy)
+{
+     rule *r;
+
+     if (sz < sizeof(rule)) return 0;
+     r = (rule *) malloc(sz);
+     if (!r) return 0;
+     r->pts = (double *) malloc(sizeof(double) * (num_points * (dim + fdim)));
+     if (fdim + dim > 0 && !r->pts) { free(r); return 0; }
+     r->vals = r->pts + num_points * dim;
+     r->dim = dim; r->fdim = fdim; r->num_points = num_points;
+     r->evalError = evalError;
+     r->destroy = destroy;
+     return r;
+}
+
+static region eval_region(region R, integrand_v f, void *fdata, rule *r)
 {
      int k;
-     R.splitDim = r->evalError(r, R.fdim, f, fdata, &R.h, R.ee, pts, vals);
+     R.splitDim = r->evalError(r, R.fdim, f, fdata, &R.h, R.ee);
      R.errmax = R.ee[0].err;
      for (k = 1; k < R.fdim; ++k)
 	  if (R.ee[k].err > R.errmax) R.errmax = R.ee[k].err;
@@ -382,7 +409,7 @@ static void destroy_rule75genzmalik(rule *r_)
      free(r->p);
 }
 
-static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, esterr *ee, double *pts, double *vals)
+static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, esterr *ee)
 {
      /* lambda2 = sqrt(9/70), lambda4 = sqrt(9/10), lambda5 = sqrt(9/19) */
      const double lambda2 = 0.3585685828003180919906451539079374954541;
@@ -399,6 +426,8 @@ static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f
      double *diff, maxdiff = 0;
      const double *center = h->data;
      const double *halfwidth = h->data + dim;
+
+     double *pts = r_->pts, *vals = r_->vals;
 
      for (i = 0; i < dim; ++i)
 	  r->p[i] = center[i];
@@ -487,7 +516,6 @@ static rule *make_rule75genzmalik(unsigned dim, unsigned fdim)
      rule75genzmalik *r;
 
      if (dim < 2) return 0; /* this rule does not support 1d integrals */
-     if (fdim == 0) return 0; /* should never be called */
 
      /* Because of the use of a bit-field in evalR_Rfs, we are limited
 	to be < 32 dimensions (or however many bits are in unsigned).
@@ -496,9 +524,13 @@ static rule *make_rule75genzmalik(unsigned dim, unsigned fdim)
 	slow and is superseded by other methods (e.g. Monte-Carlo). */
      if (dim >= sizeof(unsigned) * 8) return 0;
 
-     r = (rule75genzmalik *) malloc(sizeof(rule75genzmalik));
+     r = (rule75genzmalik *) make_rule(sizeof(rule75genzmalik),
+				       dim, fdim,
+				       num0_0(dim) + 2 * numR0_0fs(dim)
+				       + numRR0_0fs(dim) + numR_Rfs(dim),
+				       rule75genzmalik_evalError,
+				       destroy_rule75genzmalik);
      if (!r) return 0;
-     r->parent.dim = dim;
 
      r->weight1 = (real(12824 - 9120 * to_int(dim) + 400 * isqr(to_int(dim)))
 		   / real(19683));
@@ -509,15 +541,9 @@ static rule *make_rule75genzmalik(unsigned dim, unsigned fdim)
      r->weightE3 = real(265 - 100 * to_int(dim)) / real(1458);
 
      r->p = (double *) malloc(sizeof(double) * dim * 3);
-     if (!r->p) { free(r); return 0; }
+     if (!r->p) { destroy_rule((rule *) r); return 0; }
      r->widthLambda = r->p + dim;
      r->widthLambda2 = r->p + 2 * dim;
-
-     r->parent.num_points = num0_0(dim) + 2 * numR0_0fs(dim)
-	  + numRR0_0fs(dim) + numR_Rfs(dim);
-
-     r->parent.evalError = rule75genzmalik_evalError;
-     r->parent.destroy = destroy_rule75genzmalik;
 
      return (rule *) r;
 }
@@ -528,8 +554,7 @@ static rule *make_rule75genzmalik(unsigned dim, unsigned fdim)
 
 static unsigned rule15gauss_evalError(rule *r,
 				     unsigned fdim, integrand_v f, void *fdata,
-				      const hypercube *h, esterr *ee,
-				      double *pts, double *vals)
+				      const hypercube *h, esterr *ee)
 {
      /* Gauss quadrature weights and kronrod quadrature abscissae and
 	weights as evaluated with 80 decimal digit arithmetic by
@@ -569,6 +594,7 @@ static unsigned rule15gauss_evalError(rule *r,
 
      unsigned j, k;
      unsigned npts = 0;
+     double *pts = r->pts, *vals = r->vals;
 
      pts[npts++] = center;
 
@@ -644,18 +670,10 @@ static unsigned rule15gauss_evalError(rule *r,
 
 static rule *make_rule15gauss(unsigned dim, unsigned fdim)
 {
-     rule *r;
-
      if (dim != 1) return 0; /* this rule is only for 1d integrals */
-     if (fdim == 0) return 0; /* should never be called */
 
-     r = (rule *) malloc(sizeof(rule));
-     if (!r) return 0;
-     r->dim = dim;
-     r->num_points = 15;
-     r->evalError = rule15gauss_evalError;
-     r->destroy = 0;
-     return r;
+     return make_rule(sizeof(rule), dim, fdim, 15,
+		      rule15gauss_evalError, 0);
 }
 
 /***************************************************************************/
@@ -768,7 +786,7 @@ static heap_item heap_pop(heap *h)
 
 /* adaptive integration, analogous to adaptintegrator.cpp in HIntLib */
 
-static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, unsigned maxEval, double reqAbsError, double reqRelError, double *val, double *err, double *pts, double *vals)
+static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, unsigned maxEval, double reqAbsError, double reqRelError, double *val, double *err)
 {
      unsigned maxIter;		/* maximum number of adaptive subdivisions */
      heap regions;
@@ -785,8 +803,7 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 
      regions = heap_alloc(1, fdim);
 
-     heap_push(&regions, eval_region(make_region(h, fdim), f, fdata, r,
-				     pts, vals));
+     heap_push(&regions, eval_region(make_region(h, fdim), f, fdata, r));
      /* another possibility is to specify some non-adaptive subdivisions: 
 	if (initialRegions != 1)
 	   partition(h, initialRegions, EQUIDISTANT, &regions, f,fdata, r); */
@@ -802,8 +819,8 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 	  }
 	  R = heap_pop(&regions); /* get worst region */
 	  cut_region(&R, &R2);
-	  heap_push(&regions, eval_region(R, f, fdata, r, pts, vals));
-	  heap_push(&regions, eval_region(R2, f, fdata, r, pts, vals));
+	  heap_push(&regions, eval_region(R, f, fdata, r));
+	  heap_push(&regions, eval_region(R2, f, fdata, r));
      }
 
      /* re-sum integral and errors */
@@ -830,8 +847,6 @@ int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
      rule *r;
      hypercube h;
      int status;
-     double *pts; /* scratch array, num_points * dim, of points to pass to f */
-     double *vals; /* scratch array of values, num_points * fdim */
      
      if (fdim == 0) /* nothing to do */ return 0;
      if (dim == 0) { /* trivial integration */
@@ -841,26 +856,19 @@ int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
      }
      r = dim == 1 ? make_rule15gauss(dim, fdim)
 	  : make_rule75genzmalik(dim, fdim);
-     if (r) {
-	  pts = (double *) malloc(sizeof(double) * (r->num_points*(dim+fdim)));
-	  vals = pts + r->num_points * dim;
-     }
-     else pts = 0;
-     if (!r || !pts) { 
+     if (!r) { 
 	  unsigned i;
 	  for (i = 0; i < fdim; ++i) {
 	       val[i] = 0;
 	       err[i] = HUGE_VAL; 
 	  }
-	  destroy_rule(r);
 	  return -2; /* ERROR */
      }
      h = make_hypercube_range(dim, xmin, xmax);
      status = ruleadapt_integrate(r, fdim, f, fdata, &h,
 				  maxEval, reqAbsError, reqRelError,
-				  val, err, pts, vals);
+				  val, err);
      destroy_hypercube(&h);
-     free(pts);
      destroy_rule(r);
      return status;
 }
