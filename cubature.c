@@ -69,6 +69,14 @@
  GPL code from Rudolf Schuerer's HIntLib and from the GNU Scientific
  Library as listed in the copyright notice above, on the other hand.
 
+ I am also grateful to Dmitry Turbiner <dturbiner@alum.mit.edu>, who
+ implemented an initial prototype of the "vectorized" functionality
+ for evaluating multiple points in a single call (as opposed to
+ multiple functions in a single call).  (Although Dmitry implemented
+ a working version, I ended up re-implementing this feature from
+ scratch as part of a larger code-cleanup, and in order to have
+ a single code path for the vectorized and non-vectorized APIs.)
+
  TODO:
 
    * Putting these routines into the GNU GSL library would be nice.

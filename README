@@ -50,6 +50,14 @@ under the restrictive ACM copyright license).  I did make use of some
 GPL code from Rudolf Schuerer's HIntLib and from the GNU Scientific
 Library as noted above, however.
 
+I am also grateful to Dmitry Turbiner <dturbiner@alum.mit.edu>, who
+implemented an initial prototype of the "vectorized" functionality for
+evaluating multiple points in a single call (as opposed to multiple
+functions in a single call).  (Although Dmitry implemented a working
+version, I ended up re-implementing this feature from scratch as part
+of a larger code-cleanup, and in order to have a single code path for
+the vectorized and non-vectorized APIs.)
+
 -----------------------------------------------------------------------
 Usage:
 
@@ -96,6 +104,35 @@ additional information through to F as needed (rather than using
 global variables, which are not re-entrant).  If F does not need any
 additional data, you can just pass FDATA = NULL and ignore the FDATA
 argument to F.
+
+-----------------------------------------------------------------------
+"Vectorized" interface:
+
+For parallelization and other purposes, it is useful to call a single
+integrand function with an array of points to evaluate, rather than a
+single point at a time.  (e.g. you may wish to evaluate the different
+points in parallel.)  This is accomplished by calling:
+
+int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
+                      unsigned dim, const double *xmin, const double *xmax,
+                      unsigned maxEval, double reqAbsError, double reqRelError,
+                      double *val, double *err);
+
+where all the arguments are the same as above except that the
+integrand function F should now be a function of the form:
+
+void F(unsigned ndim, unsigned npts, const double *x, void *fdata,
+       unsigned fdim, double *fval);
+
+Now, x is not a single point, but an array of npts points, and upon
+return the values of all fdim integrands at all npts points should be
+stored in fval.  In particular, x[i*ndim + j] is the j-th coordinate
+of the i-th point (i < npts and j < ndim), and the k-th function
+evaluation (k < fdim) for the i-th point is returned in fval[k*npt + i].
+
+The size of npts will vary with the dimensionality of the problem;
+higher-dimensional problems will have (exponentially) larger npts,
+allowing for the possibility of more parallelism.
 
 -----------------------------------------------------------------------
 Test cases:
