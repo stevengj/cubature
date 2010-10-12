@@ -865,17 +865,17 @@ int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
      rule *r;
      hypercube h;
      int status;
+     unsigned i;
      
      if (fdim == 0) /* nothing to do */ return 0;
      if (dim == 0) { /* trivial integration */
 	  f(0, 1, xmin, fdata, fdim, val);
-	  *err = 0;
+	  for (i = 0; i < fdim; ++i) err[i] = 0;
 	  return 0;
      }
      r = dim == 1 ? make_rule15gauss(dim, fdim)
-	  : make_rule75genzmalik(dim, fdim);
+ 	          : make_rule75genzmalik(dim, fdim);
      if (!r) { 
-	  unsigned i;
 	  for (i = 0; i < fdim; ++i) {
 	       val[i] = 0;
 	       err[i] = HUGE_VAL; 
