@@ -645,9 +645,19 @@ static unsigned rule15gauss_evalError(rule *r,
 	          fabs(result_kronrod - result_gauss) * halfwidth */
 	  mean = result_kronrod * 0.5;
 	  result_asc = wgk[n - 1] * fabs(vals[0] - mean);
-	  for (j = 0; j < n - 1; ++j)
-	       result_asc += wgk[j] * (fabs(vals[2*j+1]-mean) 
-				       + fabs(vals[2*j+2]-mean));
+	  npts = 1;
+	  for (j = 0; j < (n - 1) / 2; ++j) {
+	       int j2 = 2*j + 1;
+	       result_asc += wgk[j2] * (fabs(vals[npts]-mean)
+					+ fabs(vals[npts+1]-mean));
+	       npts += 2;
+	  }
+	  for (j = 0; j < n/2; ++j) {
+	       int j2 = 2*j;
+	       result_asc += wgk[j2] * (fabs(vals[npts]-mean)
+					+ fabs(vals[npts+1]-mean));
+	       npts += 2;
+	  }
 	  err = fabs(result_kronrod - result_gauss) * halfwidth;
 	  result_abs *= halfwidth;
 	  result_asc *= halfwidth;
@@ -661,8 +671,8 @@ static unsigned rule15gauss_evalError(rule *r,
 	  }
 	  ee[k].err = err;
 
-	  /* increment val to point to next batch of results */
-	  vals += npts;
+	  /* increment vals to point to next batch of results */
+	  vals += 15;
      }
 
      return 0; /* no choice but to divide 0th dimension */
