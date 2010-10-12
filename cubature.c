@@ -473,18 +473,18 @@ static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f
 	  val0 = vals[0]; /* central point */
 	  k0 += 1;
 
-	  for (k = 0; k < 4*dim; k += 4) {
-	       double v0 = vals[k0 + k];
-	       double v1 = vals[(k0 + k) + 1];
-	       double v2 = vals[(k0 + k) + 2];
-	       double v3 = vals[(k0 + k) + 3];
+	  for (k = 0; k < dim; ++k) {
+	       double v0 = vals[k0 + 4*k];
+	       double v1 = vals[(k0 + 4*k) + 1];
+	       double v2 = vals[(k0 + 4*k) + 2];
+	       double v3 = vals[(k0 + 4*k) + 3];
 	       
 	       sum2 += v0 + v1;
 	       sum3 += v2 + v3;
 
 	       diff[k] += fabs(v0 + v1 - 2*val0 - ratio * (v2 + v3 - 2*val0));
 	  }
-	  k0 += k;
+	  k0 += 4*k;
 
 	  for (k = 0; k < numRR0_0fs(dim); ++k)
 	       sum4 += vals[k0 + k];
