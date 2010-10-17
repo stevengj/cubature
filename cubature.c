@@ -185,7 +185,7 @@ static void destroy_hypercube(hypercube *h)
 typedef struct {
      hypercube h;
      unsigned splitDim;
-     unsigned fdim; /* dimeinsionality of vector integrand */
+     unsigned fdim; /* dimensionality of vector integrand */
      esterr *ee; /* array of length fdim */
      double errmax; /* max ee[k].err */
 } region;
