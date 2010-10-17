@@ -119,6 +119,15 @@ static double relError(esterr ee)
      return (ee.val == 0.0 ? HUGE_VAL : fabs(ee.err / ee.val));
 }
 
+static double errMax(unsigned fdim, const esterr *ee)
+{
+     double errmax = 0;
+     unsigned k;
+     for (k = 0; k < fdim; ++k)
+	  if (ee[k].err > errmax) errmax = ee[k].err;
+     return errmax;
+}
+
 typedef struct {
      unsigned dim;
      double *data;	/* length 2*dim = center followed by half-widths */
@@ -140,11 +149,14 @@ static hypercube make_hypercube(unsigned dim, const double *center, const double
      hypercube h;
      h.dim = dim;
      h.data = (double *) malloc(sizeof(double) * dim * 2);
-     for (i = 0; i < dim; ++i) {
-	  h.data[i] = center[i];
-	  h.data[i + dim] = halfwidth[i];
+     h.vol = 0;
+     if (h.data) {
+	  for (i = 0; i < dim; ++i) {
+	       h.data[i] = center[i];
+	       h.data[i + dim] = halfwidth[i];
+	  }
+	  h.vol = compute_vol(&h);
      }
-     h.vol = compute_vol(&h);
      return h;
 }
 
@@ -152,11 +164,13 @@ static hypercube make_hypercube_range(unsigned dim, const double *xmin, const do
 {
      hypercube h = make_hypercube(dim, xmin, xmax);
      unsigned i;
-     for (i = 0; i < dim; ++i) {
-	  h.data[i] = 0.5 * (xmin[i] + xmax[i]);
-	  h.data[i + dim] = 0.5 * (xmax[i] - xmin[i]);
+     if (h.data) {
+	  for (i = 0; i < dim; ++i) {
+	       h.data[i] = 0.5 * (xmin[i] + xmax[i]);
+	       h.data[i + dim] = 0.5 * (xmax[i] - xmin[i]);
+	  }
+	  h.vol = compute_vol(&h);
      }
-     h.vol = compute_vol(&h);
      return h;
 }
 
@@ -180,7 +194,7 @@ static region make_region(const hypercube *h, unsigned fdim)
      R.h = make_hypercube(h->dim, h->data, h->data + h->dim);
      R.splitDim = 0;
      R.fdim = fdim;
-     R.ee = (esterr *) malloc(sizeof(esterr) * fdim);
+     R.ee = R.h.data ? (esterr *) malloc(sizeof(esterr) * fdim) : NULL;
      return R;
 }
 
@@ -191,31 +205,35 @@ static void destroy_region(region *R)
      R->ee = 0;
 }
 
-static void cut_region(region *R, region *R2)
+static int cut_region(region *R, region *R2)
 {
      unsigned d = R->splitDim, dim = R->h.dim;
      *R2 = *R;
      R->h.data[d + dim] *= 0.5;
      R->h.vol *= 0.5;
      R2->h = make_hypercube(dim, R->h.data, R->h.data + dim);
+     if (!R2->h.data) return 0;
      R->h.data[d] -= R->h.data[d + dim];
      R2->h.data[d] += R->h.data[d + dim];
      R2->ee = (esterr *) malloc(sizeof(esterr) * R2->fdim);
+     return R2->ee != NULL;
 }
 
 struct rule_s; /* forward declaration */
 
-typedef unsigned (*evalError_func)(struct rule_s *r,
-				   unsigned fdim, integrand_v f, void *fdata,
-				   const hypercube *h, esterr *ee);
+typedef int (*evalError_func)(struct rule_s *r,
+			      unsigned fdim, integrand_v f, void *fdata,
+			      unsigned nh, unsigned **split,
+			      hypercube **h, esterr **ee);
 typedef void (*destroy_func)(struct rule_s *r);
 
 
 typedef struct rule_s {
      unsigned dim, fdim;         /* the dimensionality & number of functions */
      unsigned num_points;       /* number of evaluation points */
-     double *pts; /* scratch array, num_points * dim, of points to pass to f */
-     double *vals; /* scratch array of values, num_points * fdim */
+     unsigned num_regions; /* max number of regions evaluated at once */
+     double *pts; /* points to eval: num_regions * num_points * dim */
+     double *vals; /* num_regions * num_points * fdim */
      evalError_func evalError;
      destroy_func destroy;
 } rule;
@@ -229,6 +247,22 @@ static void destroy_rule(rule *r)
      }
 }
 
+static int alloc_rule_pts(rule *r, unsigned num_regions)
+{
+     if (num_regions > r->num_regions) {
+	  free(r->pts);
+	  r->pts = r->vals = NULL;
+	  r->num_regions = 0;
+	  r->pts = (double *) malloc(sizeof(double) * 
+				     (num_regions
+				      * r->num_points * (r->dim + r->fdim)));
+	  if (r->fdim + r->dim > 0 && !r->pts) { free(r->pts); return 0; }
+	  r->vals = r->pts + num_regions * r->num_points * r->dim;
+	  r->num_regions = num_regions;
+     }
+     return 1;
+}
+
 static rule *make_rule(size_t sz, /* >= sizeof(rule) */
 		       unsigned dim, unsigned fdim, unsigned num_points,
 		       evalError_func evalError, destroy_func destroy)
@@ -238,22 +272,37 @@ static rule *make_rule(size_t sz, /* >= sizeof(rule) */
      if (sz < sizeof(rule)) return 0;
      r = (rule *) malloc(sz);
      if (!r) return 0;
-     r->pts = (double *) malloc(sizeof(double) * (num_points * (dim + fdim)));
-     if (fdim + dim > 0 && !r->pts) { free(r); return 0; }
-     r->vals = r->pts + num_points * dim;
+     r->pts = r->vals = NULL;
+     r->num_regions = 0;
      r->dim = dim; r->fdim = fdim; r->num_points = num_points;
      r->evalError = evalError;
      r->destroy = destroy;
      return r;
 }
 
+static void eval_2regions(region *R1, 
+			  region *R2, /* must have same fdim as R1 */
+			  integrand_v f, void *fdata, rule *r)
+{
+     hypercube* h[2];
+     esterr* ee[2];
+     unsigned* split[2];
+
+     h[0] = &R1->h; h[1] = &R2->h;
+     ee[0] = R1->ee; ee[1] = R2->ee;
+     split[0] = &R1->splitDim; split[1] = &R2->splitDim;
+     r->evalError(r, R1->fdim, f, fdata, 2, split, h, ee);
+     R1->errmax = errMax(R1->fdim, R1->ee);
+     R2->errmax = errMax(R2->fdim, R2->ee);
+}
+
 static region eval_region(region R, integrand_v f, void *fdata, rule *r)
 {
-     int k;
-     R.splitDim = r->evalError(r, R.fdim, f, fdata, &R.h, R.ee);
-     R.errmax = R.ee[0].err;
-     for (k = 1; k < R.fdim; ++k)
-	  if (R.ee[k].err > R.errmax) R.errmax = R.ee[k].err;
+     hypercube *h = &R.h;
+     esterr *ee = R.ee;
+     unsigned *split = &R.splitDim;
+     r->evalError(r, R.fdim, f, fdata, 1, &split, &h, &ee);
+     R.errmax = errMax(R.fdim, R.ee);
      return R;
 }
 
@@ -417,7 +466,7 @@ static void destroy_rule75genzmalik(rule *r_)
      free(r->p);
 }
 
-static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, esterr *ee)
+static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, void *fdata, unsigned nh, unsigned **split, hypercube **h, esterr **ee)
 {
      /* lambda2 = sqrt(9/70), lambda4 = sqrt(9/10), lambda5 = sqrt(9/19) */
      const double lambda2 = 0.3585685828003180919906451539079374954541;
@@ -430,93 +479,109 @@ static unsigned rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f
      const double ratio = (lambda2 * lambda2) / (lambda4 * lambda4);
 
      rule75genzmalik *r = (rule75genzmalik *) r_;
-     unsigned i, j, dimDiffMax = 0, dim = r_->dim, npts = 0;
-     double *diff, maxdiff = 0;
-     const double *center = h->data;
-     const double *halfwidth = h->data + dim;
+     unsigned i, j, ih, dim = r_->dim, npts = 0;
+     double *diff, *pts, *vals;
 
-     double *pts = r_->pts, *vals = r_->vals;
+     if (!(alloc_rule_pts(r_, nh))) return 0;
+     pts = r_->pts; vals = r_->vals;
 
-     for (i = 0; i < dim; ++i)
-	  r->p[i] = center[i];
+     for (ih = 0; ih < nh; ++ih) {
+	  const double *center = h[ih]->data;
+	  const double *halfwidth = h[ih]->data + dim;
+	  
+	  for (i = 0; i < dim; ++i)
+	       r->p[i] = center[i];
+	  
+	  for (i = 0; i < dim; ++i)
+	       r->widthLambda2[i] = halfwidth[i] * lambda2;
+	  for (i = 0; i < dim; ++i)
+	       r->widthLambda[i] = halfwidth[i] * lambda4;
 
-     for (i = 0; i < dim; ++i)
-	  r->widthLambda2[i] = halfwidth[i] * lambda2;
-     for (i = 0; i < dim; ++i)
-	  r->widthLambda[i] = halfwidth[i] * lambda4;
+	  /* Evaluate points in the center, in (lambda2,0,...,0) and
+	     (lambda3=lambda4, 0,...,0).  */
+	  evalR0_0fs4d(pts + npts*dim, dim, r->p, center, 
+		       r->widthLambda2, r->widthLambda);
+	  npts += num0_0(dim) + 2 * numR0_0fs(dim);
 
-     /* Evaluate points in the center, in (lambda2,0,...,0) and
-        (lambda3=lambda4, 0,...,0).  */
-     evalR0_0fs4d(pts + npts*dim, dim, r->p, center, r->widthLambda2, r->widthLambda);
-     npts += num0_0(dim) + 2 * numR0_0fs(dim);
+	  /* Calculate points for (lambda4, lambda4, 0, ...,0) */
+	  evalRR0_0fs(pts + npts*dim, dim, r->p, center, r->widthLambda);
+	  npts += numRR0_0fs(dim);
 
-     /* Calculate points for (lambda4, lambda4, 0, ...,0) */
-     evalRR0_0fs(pts + npts*dim, dim, r->p, center, r->widthLambda);
-     npts += numRR0_0fs(dim);
-
-     /* Calculate points for (lambda5, lambda5, ..., lambda5) */
-     for (i = 0; i < dim; ++i)
-	  r->widthLambda[i] = halfwidth[i] * lambda5;
-     evalR_Rfs(pts + npts*dim, dim, r->p, center, r->widthLambda);
-     npts += numR_Rfs(dim);
+	  /* Calculate points for (lambda5, lambda5, ..., lambda5) */
+	  for (i = 0; i < dim; ++i)
+	       r->widthLambda[i] = halfwidth[i] * lambda5;
+	  evalR_Rfs(pts + npts*dim, dim, r->p, center, r->widthLambda);
+	  npts += numR_Rfs(dim);
+     }
 
      /* Evaluate the integrand function(s) at all the points */
      f(dim, npts, pts, fdata, fdim, vals);
 
      /* we are done with the points, and so we can re-use the pts
-	array to store the maximum difference diff[i] in each dimension */
+	array to store the maximum difference diff[i] in each dimension 
+	for each hypercube */
      diff = pts;
-     for (i = 0; i < dim; ++i) diff[i] = 0;
+     for (i = 0; i < dim * nh; ++i) diff[i] = 0;
 
      for (j = 0; j < fdim; ++j) {
-	  double result, res5th;
-	  double val0, sum2=0, sum3=0, sum4=0, sum5=0;
-	  unsigned k, k0 = 0;
-
-	  /* accumulate j-th function values 
-	        NOTE: this relies on the ordering of the eval functions
-	              above, as well as on the internal structure of
-	              the evalR0_0fs4d function */
-
-	  val0 = vals[0]; /* central point */
-	  k0 += 1;
-
-	  for (k = 0; k < dim; ++k) {
-	       double v0 = vals[k0 + 4*k];
-	       double v1 = vals[(k0 + 4*k) + 1];
-	       double v2 = vals[(k0 + 4*k) + 2];
-	       double v3 = vals[(k0 + 4*k) + 3];
+	  for (ih = 0; ih < nh; ++ih) {
+	       double result, res5th;
+	       double val0, sum2=0, sum3=0, sum4=0, sum5=0;
+	       unsigned k, k0 = 0;
 	       
-	       sum2 += v0 + v1;
-	       sum3 += v2 + v3;
+	       /* accumulate j-th function values into j-th integrals
+		     NOTE: this relies on the ordering of the eval functions
+		     above, as well as on the internal structure of
+		     the evalR0_0fs4d function */
 
-	       diff[k] += fabs(v0 + v1 - 2*val0 - ratio * (v2 + v3 - 2*val0));
+	       val0 = vals[0]; /* central point */
+	       k0 += 1;
+
+	       for (k = 0; k < dim; ++k) {
+		    double v0 = vals[k0 + 4*k];
+		    double v1 = vals[(k0 + 4*k) + 1];
+		    double v2 = vals[(k0 + 4*k) + 2];
+		    double v3 = vals[(k0 + 4*k) + 3];
+		    
+		    sum2 += v0 + v1;
+		    sum3 += v2 + v3;
+		    
+		    diff[ih * dim + k] += 
+			 fabs(v0 + v1 - 2*val0 - ratio * (v2 + v3 - 2*val0));
+	       }
+	       k0 += 4*k;
+
+	       for (k = 0; k < numRR0_0fs(dim); ++k)
+		    sum4 += vals[k0 + k];
+	       k0 += k;
+	       
+	       for (k = 0; k < numR_Rfs(dim); ++k)
+		    sum5 += vals[k0 + k];
+	       
+	       /* Calculate fifth and seventh order results */
+	       result = h[ih]->vol * (r->weight1 * val0 + weight2 * sum2 + r->weight3 * sum3 + weight4 * sum4 + r->weight5 * sum5);
+	       res5th = h[ih]->vol * (r->weightE1 * val0 + weightE2 * sum2 + r->weightE3 * sum3 + weightE4 * sum4);
+	       
+	       ee[ih][j].val = result;
+	       ee[ih][j].err = fabs(res5th - result);
+	       
+	       vals += r_->num_points;
 	  }
-	  k0 += 4*k;
-
-	  for (k = 0; k < numRR0_0fs(dim); ++k)
-	       sum4 += vals[k0 + k];
-	  k0 += k;
-
-	  for (k = 0; k < numR_Rfs(dim); ++k)
-	       sum5 += vals[k0 + k];
-
-	  /* Calculate fifth and seventh order results */
-	  result = h->vol * (r->weight1 * val0 + weight2 * sum2 + r->weight3 * sum3 + weight4 * sum4 + r->weight5 * sum5);
-	  res5th = h->vol * (r->weightE1 * val0 + weightE2 * sum2 + r->weightE3 * sum3 + weightE4 * sum4);
-	  
-	  ee[j].val = result;
-	  ee[j].err = fabs(res5th - result);
-
-	  vals += npts;
      }
 
      /* figure out dimension to split: */
-     for (i = 0; i < dim; ++i) if (diff[i] > maxdiff) {
-	       maxdiff = diff[i];
-	       dimDiffMax = i;
-	  }
-     return dimDiffMax;
+     for (ih = 0; ih < nh; ++ih) {
+	  double maxdiff = 0;
+	  unsigned dimDiffMax = 0;
+
+	  for (i = 0; i < dim; ++i)
+	       if (diff[ih*dim + i] > maxdiff) {
+		    maxdiff = diff[ih*dim + i];
+		    dimDiffMax = i;
+	       }
+	  *(split[ih]) = dimDiffMax;
+     }
+     return 1;
 }
 
 static rule *make_rule75genzmalik(unsigned dim, unsigned fdim)
@@ -560,9 +625,10 @@ static rule *make_rule75genzmalik(unsigned dim, unsigned fdim)
 /* 1d 15-point Gaussian quadrature rule, based on qk15.c and qk.c in
    GNU GSL (which in turn is based on QUADPACK). */
 
-static unsigned rule15gauss_evalError(rule *r,
-				     unsigned fdim, integrand_v f, void *fdata,
-				      const hypercube *h, esterr *ee)
+static int rule15gauss_evalError(rule *r,
+				 unsigned fdim, integrand_v f, void *fdata,
+				 unsigned nh, unsigned **split,
+				 hypercube **h, esterr **ee)
 {
      /* Gauss quadrature weights and kronrod quadrature abscissae and
 	weights as evaluated with 80 decimal digit arithmetic by
@@ -596,94 +662,103 @@ static unsigned rule15gauss_evalError(rule *r,
 	  0.204432940075298892414161999234649,
 	  0.209482141084727828012999174891714
      };
+     unsigned j, k, ih, npts = 0;
+     double *pts, *vals;
 
-     const double center = h->data[0];
-     const double halfwidth = h->data[1];
+     if (!(alloc_rule_pts(r, nh))) return 0;
+     pts = r->pts; vals = r->vals;
 
-     unsigned j, k;
-     unsigned npts = 0;
-     double *pts = r->pts, *vals = r->vals;
+     for (ih = 0; ih < nh; ++ih) {
+	  const double center = h[ih]->data[0];
+	  const double halfwidth = h[ih]->data[1];
 
-     pts[npts++] = center;
+	  pts[npts++] = center;
 
-     for (j = 0; j < (n - 1) / 2; ++j) {
-	  int j2 = 2*j + 1;
-	  double w = halfwidth * xgk[j2];
-	  pts[npts++] = center - w;
-	  pts[npts++] = center + w;
-     }
-     for (j = 0; j < n/2; ++j) {
-	  int j2 = 2*j;
-	  double w = halfwidth * xgk[j2];
-	  pts[npts++] = center - w;
-	  pts[npts++] = center + w;
+	  for (j = 0; j < (n - 1) / 2; ++j) {
+	       int j2 = 2*j + 1;
+	       double w = halfwidth * xgk[j2];
+	       pts[npts++] = center - w;
+	       pts[npts++] = center + w;
+	  }
+	  for (j = 0; j < n/2; ++j) {
+	       int j2 = 2*j;
+	       double w = halfwidth * xgk[j2];
+	       pts[npts++] = center - w;
+	       pts[npts++] = center + w;
+	  }
+
+	  *(split[ih]) = 0; /* no choice but to divide 0th dimension */
      }
 
      f(1, npts, pts, fdata, fdim, vals);
      
      for (k = 0; k < fdim; ++k) {
-	  double result_gauss = vals[0] * wg[n/2 - 1];
-	  double result_kronrod = vals[0] * wgk[n - 1];
-	  double result_abs = fabs(result_kronrod);
-	  double result_asc, mean, err;
+	  for (ih = 0; ih < nh; ++ih) {
+	       const double halfwidth = h[ih]->data[1];
+	       double result_gauss = vals[0] * wg[n/2 - 1];
+	       double result_kronrod = vals[0] * wgk[n - 1];
+	       double result_abs = fabs(result_kronrod);
+	       double result_asc, mean, err;
 
-	  /* accumulate integrals */
-	  npts = 1;
-	  for (j = 0; j < (n - 1) / 2; ++j) {
-	       int j2 = 2*j + 1;
-	       double v = vals[npts] + vals[npts+1];
-	       result_gauss += wg[j] * v;
-	       result_kronrod += wgk[j2] * v;
-	       result_abs += wgk[j2] * (fabs(vals[npts]) + fabs(vals[npts+1]));
-	       npts += 2;
-	  }
-	  for (j = 0; j < n/2; ++j) {
-	       int j2 = 2*j;
-	       result_kronrod += wgk[j2] * (vals[npts] + vals[npts+1]);
-	       result_abs += wgk[j2] * (fabs(vals[npts]) + fabs(vals[npts+1]));
-	       npts += 2;
-	  }
+	       /* accumulate integrals */
+	       npts = 1;
+	       for (j = 0; j < (n - 1) / 2; ++j) {
+		    int j2 = 2*j + 1;
+		    double v = vals[npts] + vals[npts+1];
+		    result_gauss += wg[j] * v;
+		    result_kronrod += wgk[j2] * v;
+		    result_abs += wgk[j2] * (fabs(vals[npts]) 
+					     + fabs(vals[npts+1]));
+		    npts += 2;
+	       }
+	       for (j = 0; j < n/2; ++j) {
+		    int j2 = 2*j;
+		    result_kronrod += wgk[j2] * (vals[npts] + vals[npts+1]);
+		    result_abs += wgk[j2] * (fabs(vals[npts]) 
+					     + fabs(vals[npts+1]));
+		    npts += 2;
+	       }
+	       
+	       /* integration result */
+	       ee[ih][k].val = result_kronrod * halfwidth;
 
-	  /* integration result */
-	  ee[k].val = result_kronrod * halfwidth;
-
-	  /* error estimate 
-	     (from GSL, probably dates back to QUADPACK
-	      ... not completely clear to me why we don't just use
+	       /* error estimate 
+		  (from GSL, probably dates back to QUADPACK
+		  ... not completely clear to me why we don't just use
 	          fabs(result_kronrod - result_gauss) * halfwidth */
-	  mean = result_kronrod * 0.5;
-	  result_asc = wgk[n - 1] * fabs(vals[0] - mean);
-	  npts = 1;
-	  for (j = 0; j < (n - 1) / 2; ++j) {
-	       int j2 = 2*j + 1;
-	       result_asc += wgk[j2] * (fabs(vals[npts]-mean)
-					+ fabs(vals[npts+1]-mean));
-	       npts += 2;
+	       mean = result_kronrod * 0.5;
+	       result_asc = wgk[n - 1] * fabs(vals[0] - mean);
+	       npts = 1;
+	       for (j = 0; j < (n - 1) / 2; ++j) {
+		    int j2 = 2*j + 1;
+		    result_asc += wgk[j2] * (fabs(vals[npts]-mean)
+					     + fabs(vals[npts+1]-mean));
+		    npts += 2;
+	       }
+	       for (j = 0; j < n/2; ++j) {
+		    int j2 = 2*j;
+		    result_asc += wgk[j2] * (fabs(vals[npts]-mean)
+					     + fabs(vals[npts+1]-mean));
+		    npts += 2;
+	       }
+	       err = fabs(result_kronrod - result_gauss) * halfwidth;
+	       result_abs *= halfwidth;
+	       result_asc *= halfwidth;
+	       if (result_asc != 0 && err != 0) {
+		    double scale = pow((200 * err / result_asc), 1.5);
+		    err = (scale < 1) ? result_asc * scale : result_asc;
+	       }
+	       if (result_abs > DBL_MIN / (50 * DBL_EPSILON)) {
+		    double min_err = 50 * DBL_EPSILON * result_abs;
+		    if (min_err > err) err = min_err;
+	       }
+	       ee[ih][k].err = err;
+	       
+	       /* increment vals to point to next batch of results */
+	       vals += 15;
 	  }
-	  for (j = 0; j < n/2; ++j) {
-	       int j2 = 2*j;
-	       result_asc += wgk[j2] * (fabs(vals[npts]-mean)
-					+ fabs(vals[npts+1]-mean));
-	       npts += 2;
-	  }
-	  err = fabs(result_kronrod - result_gauss) * halfwidth;
-	  result_abs *= halfwidth;
-	  result_asc *= halfwidth;
-	  if (result_asc != 0 && err != 0) {
-	       double scale = pow((200 * err / result_asc), 1.5);
-	       err = (scale < 1) ? result_asc * scale : result_asc;
-	  }
-	  if (result_abs > DBL_MIN / (50 * DBL_EPSILON)) {
-	       double min_err = 50 * DBL_EPSILON * result_abs;
-	       if (min_err > err) err = min_err;
-	  }
-	  ee[k].err = err;
-
-	  /* increment vals to point to next batch of results */
-	  vals += 15;
      }
-
-     return 0; /* no choice but to divide 0th dimension */
+     return 1;
 }
 
 static rule *make_rule15gauss(unsigned dim, unsigned fdim)
@@ -724,8 +799,10 @@ static heap heap_alloc(unsigned nalloc, unsigned fdim)
      h.items = 0;
      h.fdim = fdim;
      h.ee = (esterr *) malloc(sizeof(esterr) * fdim);
-     for (i = 0; i < fdim; ++i) h.ee[i].val = h.ee[i].err = 0;
-     heap_resize(&h, nalloc);
+     if (h.ee) {
+	  for (i = 0; i < fdim; ++i) h.ee[i].val = h.ee[i].err = 0;
+	  heap_resize(&h, nalloc);
+     }
      return h;
 }
 
@@ -738,7 +815,7 @@ static void heap_free(heap *h)
      free(h->ee);
 }
 
-static void heap_push(heap *h, heap_item hi)
+static int heap_push(heap *h, heap_item hi)
 {
      int insert;
      unsigned i, fdim = h->fdim;
@@ -748,8 +825,10 @@ static void heap_push(heap *h, heap_item hi)
 	  h->ee[i].err += hi.ee[i].err;
      }
      insert = h->n;
-     if (++(h->n) > h->nalloc)
+     if (++(h->n) > h->nalloc) {
 	  heap_resize(h, h->n * 2);
+	  if (!h->items) return 0;
+     }
 
      while (insert) {
 	  int parent = (insert - 1) / 2;
@@ -759,6 +838,7 @@ static void heap_push(heap *h, heap_item hi)
 	  insert = parent;
      }
      h->items[insert] = hi;
+     return 1;
 }
 
 static heap_item heap_pop(heap *h)
@@ -820,8 +900,10 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 	  maxIter = UINT_MAX;
 
      regions = heap_alloc(1, fdim);
+     if (!regions.ee || !regions.items) return status; /* OUT OF MEMORY */
 
-     heap_push(&regions, eval_region(make_region(h, fdim), f, fdata, r));
+     if (!heap_push(&regions, eval_region(make_region(h, fdim), f, fdata, r)))
+	  return status; /* OUT OF MEMORY */
      /* another possibility is to specify some non-adaptive subdivisions: 
 	if (initialRegions != 1)
 	   partition(h, initialRegions, EQUIDISTANT, &regions, f,fdata, r); */
@@ -836,9 +918,10 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 	       break;
 	  }
 	  R = heap_pop(&regions); /* get worst region */
-	  cut_region(&R, &R2);
-	  heap_push(&regions, eval_region(R, f, fdata, r));
-	  heap_push(&regions, eval_region(R2, f, fdata, r));
+	  if (!cut_region(&R, &R2)) return status; /* OUT OF MEMORY */
+	  eval_2regions(&R, &R2, f, fdata, r);
+	  if (!heap_push(&regions, R) || !heap_push(&regions, R2))
+	       return status; /* OUT OF MEMORY */
      }
 
      /* re-sum integral and errors */
@@ -883,9 +966,10 @@ int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
 	  return -2; /* ERROR */
      }
      h = make_hypercube_range(dim, xmin, xmax);
-     status = ruleadapt_integrate(r, fdim, f, fdata, &h,
-				  maxEval, reqAbsError, reqRelError,
-				  val, err);
+     status = !h.data ? -2
+	  : ruleadapt_integrate(r, fdim, f, fdata, &h,
+				maxEval, reqAbsError, reqRelError,
+				val, err);
      destroy_hypercube(&h);
      destroy_rule(r);
      return status;
