@@ -91,8 +91,6 @@
      to remember trying it once and it made the number of evaluations
      substantially worse for my test integrands).
 
-   * More checks for out-of-memory situations (malloc failure).
-
    * In the cubature-rule evaluation for each hypercube, I end up
      allocating and then deallocating a bunch of temporary arrays
      to hold the integrand vectors.  One could consolidate these
@@ -280,9 +278,9 @@ static rule *make_rule(size_t sz, /* >= sizeof(rule) */
      return r;
 }
 
-static void eval_2regions(region *R1, 
-			  region *R2, /* must have same fdim as R1 */
-			  integrand_v f, void *fdata, rule *r)
+static int eval_2regions(region *R1, 
+			 region *R2, /* must have same fdim as R1 */
+			 integrand_v f, void *fdata, rule *r)
 {
      hypercube* h[2];
      esterr* ee[2];
@@ -291,19 +289,20 @@ static void eval_2regions(region *R1,
      h[0] = &R1->h; h[1] = &R2->h;
      ee[0] = R1->ee; ee[1] = R2->ee;
      split[0] = &R1->splitDim; split[1] = &R2->splitDim;
-     r->evalError(r, R1->fdim, f, fdata, 2, split, h, ee);
+     if (!r->evalError(r, R1->fdim, f, fdata, 2, split, h, ee)) return 0;
      R1->errmax = errMax(R1->fdim, R1->ee);
      R2->errmax = errMax(R2->fdim, R2->ee);
+     return 1;
 }
 
-static region eval_region(region R, integrand_v f, void *fdata, rule *r)
+static int eval_region(region *R, integrand_v f, void *fdata, rule *r)
 {
-     hypercube *h = &R.h;
-     esterr *ee = R.ee;
-     unsigned *split = &R.splitDim;
-     r->evalError(r, R.fdim, f, fdata, 1, &split, &h, &ee);
-     R.errmax = errMax(R.fdim, R.ee);
-     return R;
+     hypercube *h = &R->h;
+     esterr *ee = R->ee;
+     unsigned *split = &R->splitDim;
+     if (!r->evalError(r, R->fdim, f, fdata, 1, &split, &h, &ee)) return 0;
+     R->errmax = errMax(R->fdim, R->ee);
+     return 1;
 }
 
 /***************************************************************************/
@@ -901,9 +900,13 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 
      regions = heap_alloc(1, fdim);
      if (!regions.ee || !regions.items) return status; /* OUT OF MEMORY */
-
-     if (!heap_push(&regions, eval_region(make_region(h, fdim), f, fdata, r)))
-	  return status; /* OUT OF MEMORY */
+     
+     {
+	  region R = make_region(h, fdim);
+	  if (!R.ee || !eval_region(&R, f, fdata, r)
+	      || !heap_push(&regions, R))
+	       return status; /* OUT OF MEMORY */
+     }
      /* another possibility is to specify some non-adaptive subdivisions: 
 	if (initialRegions != 1)
 	   partition(h, initialRegions, EQUIDISTANT, &regions, f,fdata, r); */
@@ -918,9 +921,9 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 	       break;
 	  }
 	  R = heap_pop(&regions); /* get worst region */
-	  if (!cut_region(&R, &R2)) return status; /* OUT OF MEMORY */
-	  eval_2regions(&R, &R2, f, fdata, r);
-	  if (!heap_push(&regions, R) || !heap_push(&regions, R2))
+	  if (!cut_region(&R, &R2)
+	      || !eval_2regions(&R, &R2, f, fdata, r)
+	      || !heap_push(&regions, R) || !heap_push(&regions, R2))
 	       return status; /* OUT OF MEMORY */
      }
 
