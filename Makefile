@@ -1,6 +1,6 @@
 FILES = README COPYING cubature.c cubature.h ChangeLog
 
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall -ansi -pedantic
 
 test: cubature.c cubature.h
 	cc $(CFLAGS) -DTEST_INTEGRATOR -o $@ cubature.c -lm

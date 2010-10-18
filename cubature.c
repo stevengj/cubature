@@ -947,7 +947,7 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 	       do {
 		    if (nR + 2 > nR_alloc) {
 			 nR_alloc = (nR + 2) * 2;
-			 R = realloc(R, nR_alloc * sizeof(region));
+			 R = (region *) realloc(R, nR_alloc * sizeof(region));
 			 if (!R) goto bad;
 		    }
 		    R[nR] = heap_pop(&regions);
@@ -1122,6 +1122,8 @@ double f0 (unsigned dim, const double *x, void *params)
      return prod;
 }
 
+#define K_2_SQRTPI 1.12837916709551257390
+
 /* Gaussian centered at 1/2. */
 double f1 (unsigned dim, const double *x, void *params)
 {
@@ -1132,7 +1134,7 @@ double f1 (unsigned dim, const double *x, void *params)
 	  double dx = x[i] - 0.5;
 	  sum += dx * dx;
      }
-     return (pow (M_2_SQRTPI / (2. * a), (double) dim) *
+     return (pow (K_2_SQRTPI / (2. * a), (double) dim) *
 	     exp (-sum / (a * a)));
 }
 
@@ -1149,7 +1151,7 @@ double f2 (unsigned dim, const double *x, void *params)
 	  sum1 += dx1 * dx1;
 	  sum2 += dx2 * dx2;
      }
-     return 0.5 * pow (M_2_SQRTPI / (2. * a), dim) 
+     return 0.5 * pow (K_2_SQRTPI / (2. * a), dim) 
 	  * (exp (-sum1 / (a * a)) + exp (-sum2 / (a * a)));
 }
 
@@ -1200,7 +1202,7 @@ void f_test(unsigned dim, const double *x, void *data_,
 	      for (i = 0; i < dim; ++i) {
 		   double z = (1 - x[i]) / x[i];
 		   val += z * z;
-		   scale *= M_2_SQRTPI / (x[i] * x[i]);
+		   scale *= K_2_SQRTPI / (x[i] * x[i]);
 	      }
 	      val = exp(-val) * scale;
 	      break;
@@ -1235,19 +1237,21 @@ void f_test(unsigned dim, const double *x, void *data_,
      }
 }
 
+#define K_PI 3.14159265358979323846
+
 /* surface area of n-dimensional unit hypersphere */
 static double S(unsigned n)
 {
      double val;
      int fact = 1;
      if (n % 2 == 0) { /* n even */
-	  val = 2 * pow(M_PI, n * 0.5);
+	  val = 2 * pow(K_PI, n * 0.5);
 	  n = n / 2;
 	  while (n > 1) fact *= (n -= 1);
 	  val /= fact;
      }
      else { /* n odd */
-	  val = (1 << (n/2 + 1)) * pow(M_PI, n/2);
+	  val = (1 << (n/2 + 1)) * pow(K_PI, n/2);
 	  while (n > 2) fact *= (n -= 2);
 	  val /= fact;
      }
