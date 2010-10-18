@@ -58,6 +58,21 @@ version, I ended up re-implementing this feature from scratch as part
 of a larger code-cleanup, and in order to have a single code path for
 the vectorized and non-vectorized APIs.)
 
+I subsequently extended the "vectorized" interface to use an algorithm
+by Gladwell to increase the potential parallelism:
+
+     I. Gladwell, "Vectorization of one dimensional quadrature codes,"
+     pp. 230--238 in _Numerical Integration. Recent Developments,
+     Software and Applications_, G. Fairweather and P. M. Keast, eds.,
+     NATO ASI Series C203, Dordrecht (1987).
+
+as described in:
+
+     J. M. Bull and T. L. Freeman, "Parallel globally adaptive
+     algorithms for multi-dimensional integration,"
+     http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.42.6638
+     (1994).
+
 -----------------------------------------------------------------------
 Usage:
 
@@ -132,7 +147,10 @@ evaluation (k < fdim) for the i-th point is returned in fval[k*npt + i].
 
 The size of npts will vary with the dimensionality of the problem;
 higher-dimensional problems will have (exponentially) larger npts,
-allowing for the possibility of more parallelism.
+allowing for the possibility of more parallelism.  Also npts will vary
+between calls to your integrand---subsequent calls (if the first batch
+of points did not achieve the desired accuracy) will have larger and
+larger values of npts.
 
 -----------------------------------------------------------------------
 Test cases:
