@@ -75,11 +75,16 @@
  multiple functions in a single call).  (Although Dmitry implemented
  a working version, I ended up re-implementing this feature from
  scratch as part of a larger code-cleanup, and in order to have
- a single code path for the vectorized and non-vectorized APIs.)
+ a single code path for the vectorized and non-vectorized APIs.  I
+ subsequently implemented the algorithm by Gladwell to extract
+ even more parallelism by evalutating many hypercubes at once.)
 
  TODO:
 
    * Putting these routines into the GNU GSL library would be nice.
+
+   * A Python interface would be nice.  (Also a Matlab interface,
+     a GNU Octave interface, ...)
 
    * For high-dimensional integrals, it would be nice to implement
      a sparse-grid cubature scheme using Clenshaw-Curtis quadrature.
@@ -91,11 +96,6 @@
      to remember trying it once and it made the number of evaluations
      substantially worse for my test integrands).
 
-   * In the cubature-rule evaluation for each hypercube, I end up
-     allocating and then deallocating a bunch of temporary arrays
-     to hold the integrand vectors.  One could consolidate these
-     by allocating a single scratch workspace in adapt_integrate,
-     if for some reason the overhead of malloc is a concern.
 */
 
 /* USAGE: Call adapt_integrate with your function as described in cubature.h.
