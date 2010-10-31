@@ -630,6 +630,8 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
      }
 
      while (numEval < maxEval || !maxEval) {
+	  unsigned Nprev = N;
+
 	  /* Convergence check: */
 	  for (fi=0; fi < fdim && converged(err[fi], val[fi],
 					    reqAbsError, reqRelError); ++fi) ;
@@ -662,7 +664,8 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
 	  while (inc_JpN(Jp, Mp, N, dim)) { 
 	       for (i = 0; i < di /* first di dims were incremented */
 			 && Jp_get(Jp,dims[i].i) < Jp_get(Mp,dims[i].i); ++i) ;
-	       if (i == di) continue; /* not a new point */
+	       if (i == di && (N == Nprev || Jp_sum(Jp,dim) < N))
+		   continue; /* not a new point */
 	       if (!(Je = grow_J(Je, ++ne, &ne_alloc))) goto done;
 	       Je[ne-1] = J_data_create(Jp, dim, fdim);
 	       if (!Je[ne-1]) goto done;
