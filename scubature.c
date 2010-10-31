@@ -369,10 +369,10 @@ static J_data *J_data_create(const size_t *Jp, unsigned dim, unsigned fdim) {
      return d;
 }
 
-static int J_data_compare(const J_data *d1, const J_data *d2, unsigned dim) {
+static int J_data_compare(const J_data *d1, const J_data *d2, unsigned len) {
      unsigned i;
      size_t *Jp1 = d1->Jp, *Jp2 = d2->Jp;
-     for (i = 0; i < dim; ++i)
+     for (i = 0; i < len; ++i)
 	  if (Jp1[i] != Jp2[i]) 
 	       return Jp1[i] < Jp2[i] ? -1 : 1;
      return 0;
@@ -380,7 +380,7 @@ static int J_data_compare(const J_data *d1, const J_data *d2, unsigned dim) {
 
 /* red-black tree of J_data */
 typedef J_data *rb_key;
-typedef unsigned rb_key_data; /* the dimension, passed to compare func */
+typedef unsigned rb_key_data; /* the Jp length, passed to compare func */
 #define rb_destroy_key J_data_destroy
 #define rb_compare J_data_compare
 #include "redblack.h"
@@ -557,7 +557,7 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
      if (fdim == 0) return SUCCESS; /* no integrands */
 
      init_ccd_rules(&ccd);
-     rb_tree_init(&t, dim);
+     rb_tree_init(&t, Jp_length(dim));
 
      if (dim == 0) { /* trivial 0-dimensional "integral" = 1 f evaluation */
 	  J_data J, *pJ;
@@ -816,7 +816,7 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
      ret = integrate(dim, fdim, sintegrand, &d, Mp,
 		     maxEval, reqAbsError, reqRelError, val, err);
 
-     for (i = 0; i < dim; ++i) {
+     for (i = 0; i < fdim; ++i) {
 	  val[i] *= volscale;
 	  err[i] *= volscale;
      }
