@@ -514,14 +514,13 @@ static int converged(double err, double val, double abstol, double reltol) {
 /* Set val and err (arrays of length fdim) to the estimated integral of f
    and corresponding errors, where f is fdim integrands.
 
-   On input, Mp is an initial maximum J in each dimension, and N is a
-   maximum L1 norm of J.  These are incremented adaptively until the
-   specified error tolerances have been met for every integrand, or
-   until maxEval is exceeded.  (Normally, N should be >= max |m|.)
+   On input, Mp is an initial maximum J in each dimension.  This are
+   incremented adaptively until the specified error tolerances have
+   been met for every integrand, or until maxEval is exceeded.
 
    Returns FAILURE if a memory allocation error occurs, otherwise SUCCESS. */
 static int integrate(unsigned dim, unsigned fdim, integrand_ f, double *fdata,
-		     size_t *Mp, unsigned N,
+		     size_t *Mp,
 		     size_t maxEval, double reqAbsError, double reqRelError,
 		     double *val, double *err)
 {
@@ -529,7 +528,7 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, double *fdata,
      size_t ie, ne, ne_alloc = 0; /* length of Je array & allocated length */
      rb_tree t; /* red-black tree of cubature terms J and function values */
      size_t *Jp = NULL;
-     unsigned i, fi, di;
+     unsigned i, fi, di, N;
      ccd_rules ccd;
      int ret = FAILURE;
      size_t numEval;
@@ -575,6 +574,7 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, double *fdata,
      
      ne = 0;
      Jp_zero(Jp, dim);
+     N = Jp_max(Mp, dim);
      do {
 	  if (!(Je = grow_J(Je, ++ne, &ne_alloc))) goto done;
 	  Je[ne-1] = J_data_create(Jp, dim, fdim);
@@ -626,10 +626,10 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, double *fdata,
 	  for (fi = 0; fi < fdim; ++fi) rem_err[fi] = err[fi];
 	  /* increment M in all dimensions to be refined */
 	  di = 0;
-	  ++N; /* increase L1 norm only by 1 to retain sparsity */
 	  do {
 	       i = dims[di].i;
 	       Jp_set(Mp, i, Jp_get(Mp, i) + 1);
+	       N = Jp_max(Mp, dim);
 	       numEval = MpN_nf(Mp, N, dim, Jp);
 	       for (fi = 0; fi < fdim; ++fi) 
 		    rem_err[fi] -= derrs[i*fdim + fi];
