@@ -20,12 +20,7 @@
    i = 0..n-1 and one point at x=0.  We define j=0 to be the 1-point rule
    with a point at x=0, and j=-1 to be the 0-point rule that returns 0.
 
-   We only allow j to go from 0 to 31, which allows us to use a 4-bit
-   packed format for storing j, mainly for comparison efficiency in
-   high-dimensional cubature more than storage efficiency (16 j's per
-   64-bit integer).  If you need more than 1+2^31 points (and much
-   more than that in multidimensions), you probably need a different
-   integration algorithm anyway.
+   We allow j to go from 0 to 63.
 
    For sparse grids (and adaptation in general), we instead store the
    *difference* (CCD) rules that compute the difference between the j
@@ -43,9 +38,9 @@
 */
 
 typedef struct ccd_rules_s {
-     int jmax; /* j <= jmax < 32 has been allocated */
+     int jmax; /* j <= jmax < 64 has been allocated */
      double *x; /* points x[i] in increasing j order; see above */
-     double *w[32]; /* weights w[j][i] for x[i] of level-j CCD rule */
+     double *w[64]; /* weights w[j][i] for x[i] of level-j CCD rule */
 } ccd_rules;
 
 /* Compute the CC weights via FFTW's DCT, for 2*n+1 quadrature points.
@@ -95,7 +90,7 @@ static void init_ccd_rules(ccd_rules *ccd)
      int j;
      ccd->jmax = -1;
      ccd->x = NULL;
-     for (j = 0; j < 32; ++j) ccd->w[j] = NULL;
+     for (j = 0; j < 64; ++j) ccd->w[j] = NULL;
 }
 
 static void destroy_ccd_rules(ccd_rules *ccd)
@@ -103,7 +98,7 @@ static void destroy_ccd_rules(ccd_rules *ccd)
      if (ccd) {
 	  int j;
 	  free(ccd->x);
-	  for (j = 0; j < 32; ++j) free(ccd->w[j]);
+	  for (j = 0; j < 64; ++j) free(ccd->w[j]);
 	  init_ccd_rules(ccd);
      }
 }
@@ -118,7 +113,7 @@ static int grow_ccd_rules(ccd_rules *ccd, int jmax)
      int j;
      double *wj, *wj1; /* scratch space for j and j-1 weights */
 
-     if (!ccd || jmax >= 32) return FAILURE;
+     if (!ccd || jmax >= 64) return FAILURE;
      if (jmax < 0 || jmax <= ccd->jmax) return SUCCESS;
 
      ccd->x = (double *) realloc(ccd->x, (1+CCD_N(jmax)) * sizeof(double));
@@ -187,7 +182,7 @@ static size_t ccd_dnf2(unsigned j) {
 }
 
 /***************************************************************************/
-/* COMPRESSED STORAGE OF LEVEL VECTOR */
+/* STORAGE OF LEVEL VECTOR */
 
 /* the sparse-grid quadrature is a sum of difference (CCD) rules in
    each dimension with levels J = (j_0, j_1, ...., j_{d-1}) in d
@@ -195,137 +190,130 @@ static size_t ccd_dnf2(unsigned j) {
    where | |_1 is the L_1 norm and |M|_\infty is the L_\infty norm.
 
    Since J is used as a key in a red-black tree (below), we want to
-   make comparisons of two J values quickly.  We do this by packing
-   the levels j_i into arrays Jp of unsigned integers at least the
-   same size as pointers (type size_t), 4 bits each (allowing 0 <= j_i
-   < 32).  On a 64-bit machine, this packs 16 dimensions per integer,
-   and we use the ordinary integer comparison function for the tree
-   (in dictionary order if we have more than 16 dimensions).
-*/
+   make comparisons of two J values quickly.  We do this by storing
+   each j_i as one byte (unsigned char), but making the J array equivalent
+   to an array of size_t (8 bytes on a 64-bit machine), so that we
+   can compare size_t values instead of every j individually. */
 
-/* length of Jp array, given dim, packing 2 j's per byte */
-static unsigned Jp_length(unsigned dim) {
-     return (dim + (sizeof(size_t) * 2 - 1)) / (sizeof(size_t) * 2);
+typedef unsigned char *Jarr;
+
+/* length of J array in sizeof(size_t)'s, given dim, packing 1 j per
+   byte, but padding to an integer multiple of sizeof(size_t) bytes */
+static unsigned J_length(unsigned dim) {
+     return ((dim + sizeof(size_t) - 1) / sizeof(size_t));
 }
 
-/* given Jp array, return j_i */
-static unsigned Jp_get(const size_t *Jp, unsigned i) {
-     unsigned i0 = i % (sizeof(size_t) * 2);
-     return (Jp[i / (sizeof(size_t) * 2)] >> (i0 * 4)) & 0xf;
+/* given J array, return j_i */
+static unsigned J_get(const Jarr J, unsigned i) { return J[i]; }
+
+/* set j_i to j (which must be < 256) */
+static void J_set(Jarr J, unsigned i, unsigned j) { J[i] = j; }
+
+/* return J array, uninitialized */
+static Jarr J_alloc(unsigned dim) {
+     return (Jarr) malloc(J_length(dim) * sizeof(size_t));
 }
 
-/* set j_i to j (which must be < 32) */
-static void Jp_set(size_t *Jp, unsigned i, unsigned j) {
-     unsigned i0 = i % (sizeof(size_t) * 2);
-     unsigned i1 = i / (sizeof(size_t) * 2);
-     size_t Jp1 = Jp[i1];
-     unsigned j0 = (Jp1 >> (i0 * 4)) & 0xf; /* Jp_get(Jp, i) */
-     Jp[i1] = Jp1 ^ (((size_t) (j0 ^ j)) << (i0 * 4));
+/* set J array to zero */
+static void J_zero(Jarr J, unsigned dim) {
+     memset(J, 0, J_length(dim) * sizeof(size_t));
 }
 
-/* return Jp array, uninitialized */
-static size_t *Jp_alloc(unsigned dim) {
-     return (size_t *) malloc(Jp_length(dim) * sizeof(size_t));
-}
-
-/* set Jp array to zero */
-static void Jp_zero(size_t *Jp, unsigned dim) {
-     memset(Jp, 0, Jp_length(dim) * sizeof(size_t));
-}
-
-/* return maximum component of Jp */
-static unsigned Jp_max(const size_t *Jp, unsigned dim)
+/* return maximum component of J */
+static unsigned J_max(const Jarr J, unsigned dim)
 {
      unsigned i, jmax = 0;
      for (i = 0; i < dim; ++i) {
-	  unsigned j = Jp_get(Jp, i);
+	  unsigned j = J_get(J, i);
 	  if (j > jmax) jmax = j;
      }
      return jmax;
 }
 
-/* return sum of components of Jp */
-static unsigned Jp_sum(const size_t *Jp, unsigned dim)
+/* return sum of components of J */
+static unsigned J_sum(const Jarr J, unsigned dim)
 {
      unsigned i, jsum = 0;
      for (i = 0; i < dim; ++i)
-	  jsum += Jp_get(Jp, i);
+	  jsum += J_get(J, i);
      return jsum;
 }
 
-/* return number of dimensions in which j_i == m_i */
-static unsigned Jp_equal_count(const size_t *Jp, const size_t *Mp,
-			       unsigned dim) {
+/* return number of dimensions in which j_i == m_i or j_i == L*/
+static unsigned J_equal_count(const Jarr J, const Jarr M, unsigned L,
+			      unsigned dim) {
      unsigned i, count = 0;
-     for (i = 0; i < dim; ++i)
-	  count += Jp_get(Jp, i) == Jp_get(Mp, i);
+     for (i = 0; i < dim; ++i) {
+	  unsigned j = J_get(J, i);
+	  count += j == J_get(M, i) || j == L;
+     }
      return count;
 }
 
-/* return a newly allocated copy of Jp, or NULL on failure */
-static size_t *Jp_dup(const size_t *Jp, unsigned dim) {
-     unsigned len = Jp_length(dim);
-     size_t *dup = (size_t *) malloc(len * sizeof(size_t));
-     if (dup) memcpy(dup, Jp, len * sizeof(size_t));
+/* return a newly allocated copy of J, or NULL on failure */
+static Jarr J_dup(const Jarr J, unsigned dim) {
+     unsigned len = J_length(dim);
+     Jarr dup = (Jarr) malloc(len * sizeof(size_t));
+     if (dup) memcpy(dup, J, len * sizeof(size_t));
      return dup;
 }
 
 /* return the number of function evaluations (or pair sums) that need
    to be stored for a given J, not counting evaluations stored for
    smaller J (in any dimension) */
-static size_t Jp_dnf(const size_t *Jp, unsigned dim) {
+static size_t J_dnf(const Jarr J, unsigned dim) {
      size_t dnf = 1;
      unsigned i;
      for (i = 0; i < dim; ++i)
-	  dnf *= ccd_dnf(Jp_get(Jp, i));
+	  dnf *= ccd_dnf(J_get(J, i));
      return dnf;
 }
 
-/* increment the Jp array so that each j_i runs from 0 to m_i,
-   where m_i are the components of the packed array Mp.
+/* increment the J array so that each j_i runs from 0 to m_i,
+   where m_i are the components of the packed array M.
    Returns 0 when incrementing is done. */
-static int inc_Jp(size_t *Jp, const size_t *Mp, unsigned dim)
+static int inc_J(Jarr J, const Jarr M, unsigned dim)
 {
      unsigned i, j;
      /* (this could be made more efficient if needed) */
-     for (i = 0; i < dim && Jp_get(Jp, i) == Jp_get(Mp, i); ++i) ;
+     for (i = 0; i < dim && J_get(J, i) == J_get(M, i); ++i) ;
      if (i == dim) return 0;
-     Jp_set(Jp, i, Jp_get(Jp, i) + 1);
-     for (j = 0; j < i; ++j) Jp_set(Jp, j, 0);
+     J_set(J, i, J_get(J, i) + 1);
+     for (j = 0; j < i; ++j) J_set(J, j, 0);
      return 1;
 }
 
 static unsigned imin2(unsigned i, unsigned j) { return(i<j ? i : j); }
 
-/* like inc_Jp, but also requires L1 norm of J to be <= N */
-static int inc_JpN(size_t *Jp, const size_t *Mp, unsigned N, unsigned dim) {
-     unsigned i, j, n = Jp_sum(Jp, dim);
+/* like inc_J, but also requires L1 norm of J to be <= N */
+static int inc_JN(Jarr J, const Jarr M, unsigned N, unsigned dim) {
+     unsigned i, j, n = J_sum(J, dim);
      for (i = 0; i < dim; ++i) {
-	  unsigned j = Jp_get(Jp, i);
+	  unsigned j = J_get(J, i);
 	  n -= j;
-	  if (j < imin2(Jp_get(Mp, i), N - n))
+	  if (j < imin2(J_get(M, i), N - n))
 	       break;
      }
      if (i == dim) return 0;
-     Jp_set(Jp, i, Jp_get(Jp, i) + 1);
-     for (j = 0; j < i; ++j) Jp_set(Jp, j, 0);
+     J_set(J, i, J_get(J, i) + 1);
+     for (j = 0; j < i; ++j) J_set(J, j, 0);
      return 1;
 }
 
-/* return total # function evals for a given Mp and max L1 norm = N,
+/* return total # function evals for a given M and max L1 norm = N,
    counting evaluations for all J <= M && |J| <= N, and counting
    actual function evaluations not pairs.  Jt is a scratch array. */
-static size_t MpN_nf(const size_t *Mp, unsigned N, unsigned dim,
-		     size_t *Jp) {
+static size_t MN_nf(const Jarr M, unsigned N, unsigned dim,
+		     Jarr J) {
      size_t nf = 0;
-     Jp_zero(Jp, dim);
+     J_zero(J, dim);
      do {
 	  size_t nf_cur = 1;
 	  unsigned i;
 	  for (i = 0; i < dim; ++i)
-	       nf_cur *= ccd_dnf2(Jp_get(Jp, i));
+	       nf_cur *= ccd_dnf2(J_get(J, i));
 	  nf += nf_cur;
-     } while (inc_JpN(Jp, Mp, N, dim));
+     } while (inc_JN(J, M, N, dim));
      return nf;
 }
 
@@ -343,43 +331,43 @@ static size_t MpN_nf(const size_t *Mp, unsigned N, unsigned dim,
 */
 
 typedef struct J_data_s {
-     size_t *Jp; /* packed J vector */
+     Jarr J; /* packed J vector */
      double *f; /* function evaluations */
 } J_data;
 
 static void J_data_destroy(J_data *d) {
      if (d) {
 	  free(d->f);
-	  free(d->Jp);
+	  free(d->J);
 	  free(d);
      }
 }
 
-/* create J_data with a copy of Jp, assuming the functino has dimensionality
+/* create J_data with a copy of J, assuming the functino has dimensionality
    fdim (i.e. each function evaluation returns a vector of fdim>0 values) */
-static J_data *J_data_create(const size_t *Jp, unsigned dim, unsigned fdim) {
+static J_data *J_data_create(const Jarr J, unsigned dim, unsigned fdim) {
      J_data *d = (J_data *) malloc(sizeof(J_data));
      if (!d) return NULL;
-     d->Jp = NULL; d->f = NULL;
-     d->Jp = Jp_dup(Jp, dim);
-     if (!d->Jp) { J_data_destroy(d); return NULL; }
-     d->f = (double *) malloc(sizeof(double) * (fdim * Jp_dnf(Jp, dim)));
+     d->J = NULL; d->f = NULL;
+     d->J = J_dup(J, dim);
+     if (!d->J) { J_data_destroy(d); return NULL; }
+     d->f = (double *) malloc(sizeof(double) * (fdim * J_dnf(J, dim)));
      if (!d->f) { J_data_destroy(d); return NULL; }
      return d;
 }
 
 static int J_data_compare(const J_data *d1, const J_data *d2, unsigned len) {
      unsigned i;
-     size_t *Jp1 = d1->Jp, *Jp2 = d2->Jp;
+     size_t *J1 = (size_t *) d1->J, *J2 = (size_t *) d2->J;
      for (i = 0; i < len; ++i)
-	  if (Jp1[i] != Jp2[i]) 
-	       return Jp1[i] < Jp2[i] ? -1 : 1;
+	  if (J1[i] != J2[i]) 
+	       return J1[i] < J2[i] ? -1 : 1;
      return 0;
 }
 
 /* red-black tree of J_data */
 typedef J_data *rb_key;
-typedef unsigned rb_key_data; /* the Jp length, passed to compare func */
+typedef unsigned rb_key_data; /* the J length, passed to compare func */
 #define rb_destroy_key J_data_destroy
 #define rb_compare J_data_compare
 #include "redblack.h"
@@ -392,11 +380,11 @@ typedef unsigned rb_key_data; /* the Jp length, passed to compare func */
    some helper functions to enumerate the points for a given J_data. */
 
 /* set nps (length dim) array to the number of (positive-coordinate)
-   coordinates for Jp in each dimension. */
-static void Jp_get_nps(size_t *nps, const size_t *Jp, unsigned dim) {
+   coordinates for J in each dimension. */
+static void J_get_nps(size_t *nps, const Jarr J, unsigned dim) {
      unsigned i;
      for (i = 0; i < dim; ++i)
-	  nps[i] = ccd_dnf(Jp_get(Jp, i));
+	  nps[i] = ccd_dnf(J_get(J, i));
 }
 
 /* Increment the ks array, so that calling this repeatedly starting
@@ -424,18 +412,18 @@ static int inc_negative(unsigned *neg, double *x, unsigned dim) {
      return 1;
 }
 
-/* set array x[dim] to the ks-th point in Jp, where 0 <= ks[i] <
-   nps[i] with nps set by Jp_get_nps.  All coordinates are set to
+/* set array x[dim] to the ks-th point in J, where 0 <= ks[i] <
+   nps[i] with nps set by J_get_nps.  All coordinates are set to
    nonnegative values; the actual function value should be summed over
    positive + negative values in each nonzero coordinate. */
-static void Jp_point(double *x, 
-		     const size_t *Jp, const size_t *ks,
+static void J_point(double *x, 
+		     const Jarr J, const size_t *ks,
 		     unsigned dim,
 		     const ccd_rules *ccd) {
      const double *ccdx = ccd->x;
      unsigned i;
      for (i = 0; i < dim; ++i) {
-	  unsigned j = Jp_get(Jp, i);
+	  unsigned j = J_get(J, i);
 	  x[i] = ccdx[j > 0 ? ccd_nf(j-1) + ks[i] : 0];
      }
 }
@@ -443,9 +431,9 @@ static void Jp_point(double *x,
 /***************************************************************************/
 /* J EVALUATION: evaluate one term J in the integral */
 
-/* evaluate the J-th term in the integrand, where J is d->Jp, assuming
+/* evaluate the J-th term in the integrand, where J is d->J, assuming
    that d->f and all J' <= J terms in the tree t have been evaluated.
-   Jt points to a scratch array of length Jp_length(dim), ks is a
+   Jt points to a scratch array of length J_length(dim), ks is a
    scratch array of length dim, and nps is a scratch array of length
    dim.
 
@@ -455,32 +443,32 @@ static void Jp_point(double *x,
 static void J_eval(unsigned fdim, double *sums, 
 		   const J_data *d, 
 		   rb_tree *t, const ccd_rules *ccd, unsigned dim,
-		   size_t *Jt, size_t *ks, size_t *nps)
+		   Jarr Jt, size_t *ks, size_t *nps)
 {
-     const size_t *Jp = d->Jp;
+     const Jarr J = d->J;
      unsigned fi, i;
      J_data key;
 
      for (fi = 0; fi < fdim; ++fi) sums[fi] = 0;
-     Jp_zero(Jt, dim);
-     key.Jp = Jt; key.f = NULL;
-     do { /* evaluate Jt-specific contributions for all Jt <= Jp */
+     J_zero(Jt, dim);
+     key.J = Jt; key.f = NULL;
+     do { /* evaluate Jt-specific contributions for all Jt <= J */
 	  double *f = rb_tree_find(t, &key)->k->f; /* lookup Jt func. evals */
 	  size_t k = 0; /* scalar index corresponding to ks */
 	  for (i = 0; i < dim; ++i) ks[i] = 0;
-	  Jp_get_nps(nps, Jt, dim);
+	  J_get_nps(nps, Jt, dim);
 	  do { /* loop over ks from 0 to nps */
 	       double w = 1;
 	       for (i = 0; i < dim; ++i) {
-		    unsigned j0 = Jp_get(Jp, i);
-		    unsigned j = Jp_get(Jt, i);
+		    unsigned j0 = J_get(J, i);
+		    unsigned j = J_get(Jt, i);
 		    w *= ccd->w[j0][j > 0 ? ccd_nf(j-1) + ks[i] : 0];
 	       }
 	       for (fi = 0; fi < fdim; ++fi)
 		    sums[fi] += w * f[fdim * k + fi];
 	       ++k;
 	  } while (inc_ks(ks, nps, dim));
-     } while (inc_Jp(Jt, Jp, dim));
+     } while (inc_J(Jt, J, dim));
 }
 
 /***************************************************************************/
@@ -488,7 +476,7 @@ static void J_eval(unsigned fdim, double *sums,
 
 /* internal, low-level integrand: evaluates J[i]->f[...] for
    i = 0 to nJ-1.  */
-typedef void (*integrand_)(unsigned nJ, J_data **J,
+typedef void (*integrand_)(unsigned nJ, J_data **Je,
 			   unsigned dim, unsigned fdim,
 			   const ccd_rules *ccd,
 			   void *fdata);
@@ -513,13 +501,13 @@ static void dim_error_sort(dim_error *d, unsigned dim) {
 
 /* ensure that J array (length *n_alloc) contains at least n elements,
    growing it as needed */
-static J_data **grow_J(J_data **J, size_t n, size_t *n_alloc)
+static J_data **grow_J(J_data **Jd, size_t n, size_t *n_alloc)
 {
      if (n > *n_alloc) {
 	  *n_alloc = 2*n;
-	  J = (J_data **) realloc(J, sizeof(J_data *) * *n_alloc);
+	  Jd = (J_data **) realloc(Jd, sizeof(J_data *) * *n_alloc);
      }
-     return J;
+     return Jd;
 }
 
 static int converged(double err, double val, double abstol, double reltol) {
@@ -529,20 +517,20 @@ static int converged(double err, double val, double abstol, double reltol) {
 /* Set val and err (arrays of length fdim) to the estimated integral of f
    and corresponding errors, where f is fdim integrands.
 
-   On input, Mp is an initial maximum J in each dimension.  This are
+   On input, M is an initial maximum J in each dimension.  This are
    incremented adaptively until the specified error tolerances have
    been met for every integrand, or until maxEval is exceeded.
 
    Returns FAILURE if a memory allocation error occurs, otherwise SUCCESS. */
 static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
-		     size_t *Mp,
+		     Jarr M,
 		     size_t maxEval, double reqAbsError, double reqRelError,
 		     double *val, double *err)
 {
      J_data **Je = NULL; /* array of points to evaluate */
      size_t ie, ne, ne_alloc = 0; /* length of Je array & allocated length */
      rb_tree t; /* red-black tree of cubature terms J and function values */
-     size_t *Jp = NULL;
+     Jarr J = NULL;
      unsigned i, fi, di, N;
      ccd_rules ccd;
      int ret = FAILURE;
@@ -556,11 +544,11 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
      if (fdim == 0) return SUCCESS; /* no integrands */
 
      init_ccd_rules(&ccd);
-     rb_tree_init(&t, Jp_length(dim));
+     rb_tree_init(&t, J_length(dim));
 
      if (dim == 0) { /* trivial 0-dimensional "integral" = 1 f evaluation */
 	  J_data J, *pJ;
-	  J.Jp = NULL;
+	  J.J = NULL;
 	  J.f = val;
 	  pJ = &J;
 	  f(1, &pJ, dim, fdim, &ccd, fdata);
@@ -571,8 +559,8 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
      dims = (dim_error *) malloc(dim * sizeof(dim_error));
      if (!dims) goto done;
 
-     Jp = Jp_alloc(dim);
-     if (!Jp) goto done;
+     J = J_alloc(dim);
+     if (!J) goto done;
      derrs = (double *) malloc(sizeof(double) * (dim * fdim));
      if (!derrs) goto done;
      Jsum = (double *) malloc(sizeof(double) * fdim);
@@ -585,37 +573,41 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
      memset(val, 0, sizeof(double) * fdim);
      memset(err, 0, sizeof(double) * fdim);
 
-     if (FAILURE == grow_ccd_rules(&ccd, Jp_max(Mp, dim))) goto done;
+     if (FAILURE == grow_ccd_rules(&ccd, J_max(M, dim))) goto done;
      
      ne = 0;
-     Jp_zero(Jp, dim);
-     N = Jp_max(Mp, dim);
+     J_zero(J, dim);
+     N = J_max(M, dim);
      do {
 	  if (!(Je = grow_J(Je, ++ne, &ne_alloc))) goto done;
-	  Je[ne-1] = J_data_create(Jp, dim, fdim);
+	  Je[ne-1] = J_data_create(J, dim, fdim);
 	  if (!Je[ne-1]) goto done;
 	  if (!rb_tree_insert(&t, Je[ne-1])) {
 	       J_data_destroy(Je[ne-1]);
 	       goto done;
 	  }
-     } while (inc_JpN(Jp, Mp, N, dim));
-     numEval = MpN_nf(Mp, N, dim, Jp);
+     } while (inc_JN(J, M, N, dim));
+     numEval = MN_nf(M, N, dim, J);
      f(ne, Je, dim, fdim, &ccd, fdata);
 
      for (ie = 0; ie < ne; ++ie) {
-	  unsigned count = Jp_equal_count(Je[ie]->Jp, Mp, dim);
-	  J_eval(fdim, Jsum, Je[ie], &t, &ccd, dim, Jp,
+	  unsigned jsum = J_sum(Je[ie]->J, dim);
+	  unsigned jmax = jsum == N ? J_max(Je[ie]->J, dim) : N+1;
+	  unsigned count = J_equal_count(Je[ie]->J, M, jmax, dim);
+	  J_eval(fdim, Jsum, Je[ie], &t, &ccd, dim, J,
 		 scratch, scratch + dim);
 	  for (fi = 0; fi < fdim; ++fi) val[fi] += Jsum[fi];
 	  if (count > 0)
-	       for (i = 0; i < dim; ++i)
-		    if (Jp_get(Je[ie]->Jp, i) == Jp_get(Mp, i)) {
+	       for (i = 0; i < dim; ++i) {
+		    unsigned j = J_get(Je[ie]->J, i);
+		    if (j == J_get(M, i) || j == jmax) {
 			 for (fi = 0; fi < fdim; ++fi) {
 			      double erri = fabs(Jsum[fi]) / count;
 			      err[fi] += erri;
 			      derrs[i*fdim + fi] += erri;
 			 }
 		    }
+	       }
      }
 
      /* set up array of dimensions and errors for refinement */
@@ -645,9 +637,9 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
 	  di = 0;
 	  do {
 	       i = dims[di].i;
-	       Jp_set(Mp, i, Jp_get(Mp, i) + 1);
-	       N = Jp_max(Mp, dim);
-	       numEval = MpN_nf(Mp, N, dim, Jp);
+	       J_set(M, i, J_get(M, i) + 1);
+	       N = J_max(M, dim);
+	       numEval = MN_nf(M, N, dim, J);
 	       for (fi = 0; fi < fdim; ++fi) 
 		    rem_err[fi] -= derrs[i*fdim + fi];
 	       memset(derrs + i*fdim, 0, sizeof(double) * fdim);
@@ -658,35 +650,40 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
 	       if (fi == fdim) break; /* other regions have small errs */
 	  } while (di < dim && (numEval < maxEval || !maxEval));
 	  ne = 0;
-	  Jp_zero(Jp, dim);
-	  /* add all new J's (note: generic inc_JpN is inefficient here) */
-	  while (inc_JpN(Jp, Mp, N, dim)) { 
+	  J_zero(J, dim);
+	  /* add all new J's (note: generic inc_JN is inefficient here) */
+	  while (inc_JN(J, M, N, dim)) { 
 	       for (i = 0; i < di /* first di dims were incremented */
-			 && Jp_get(Jp,dims[i].i) < Jp_get(Mp,dims[i].i); ++i) ;
-	       if (i == di && (N == Nprev || Jp_sum(Jp,dim) < N))
+			 && J_get(J,dims[i].i) < J_get(M,dims[i].i); ++i) ;
+	       if (i == di && (N == Nprev || J_sum(J,dim) < N))
 		   continue; /* not a new point */
+
 	       if (!(Je = grow_J(Je, ++ne, &ne_alloc))) goto done;
-	       Je[ne-1] = J_data_create(Jp, dim, fdim);
+	       Je[ne-1] = J_data_create(J, dim, fdim);
 	       if (!Je[ne-1]) goto done;
 	       if (!rb_tree_insert(&t, Je[ne-1])) {
 		    J_data_destroy(Je[ne-1]);
 		    goto done;
 	       }
 	  }
-	  if (FAILURE == grow_ccd_rules(&ccd, Jp_max(Mp, dim))) goto done;
+	  if (FAILURE == grow_ccd_rules(&ccd, J_max(M, dim))) goto done;
 	  /* evaulate integrand at new points */
 	  f(ne, Je, dim, fdim, &ccd, fdata);
 	  /* accumulate new terms in integrand and errors */
 	  for (ie = 0; ie < ne; ++ie) {
-	       unsigned count = Jp_equal_count(Je[ie]->Jp, Mp, dim);
-	       J_eval(fdim, Jsum, Je[ie], &t, &ccd, dim, Jp,
+	       unsigned jsum = J_sum(Je[ie]->J, dim);
+	       unsigned jmax = jsum == N ? J_max(Je[ie]->J, dim) : N+1;
+	       unsigned count = J_equal_count(Je[ie]->J, M, jmax, dim);
+	       J_eval(fdim, Jsum, Je[ie], &t, &ccd, dim, J,
 		      scratch, scratch + dim);
 	       for (fi = 0; fi < fdim; ++fi) val[fi] += Jsum[fi];
 	       if (count > 0)
-		    for (i = 0; i < dim; ++i)
-			 if (Jp_get(Je[ie]->Jp, i) == Jp_get(Mp, i))
+		    for (i = 0; i < dim; ++i) {
+			 unsigned j = J_get(Je[ie]->J, i);
+			 if (j == J_get(M, i) || j == jmax)
 			      for (fi = 0; fi < fdim; ++fi)
 				   derrs[i*fdim + fi] += fabs(Jsum[fi])/count;
+		    }
 	  }
 	  for (fi = 0; fi < fdim; ++fi) {
 	       err[fi] = 0;
@@ -707,7 +704,7 @@ done:
      free(scratch);
      free(Jsum);
      free(derrs);
-     free(Jp);
+     free(J);
      free(dims);
      destroy_ccd_rules(&ccd);
      rb_tree_destroy(&t);
@@ -728,7 +725,7 @@ typedef struct {
      unsigned *negative;
 } sintegrand_data;
 
-static void sintegrand(unsigned nJ, J_data **J,
+static void sintegrand(unsigned nJ, J_data **Je,
 		       unsigned dim, unsigned fdim,
 		       const ccd_rules *ccd,
 		       void *d_) {
@@ -743,13 +740,13 @@ static void sintegrand(unsigned nJ, J_data **J,
      unsigned iJ, i;
 
      for (iJ = 0; iJ < nJ; ++iJ) { /* J points */
-	  size_t *Jp = J[iJ]->Jp;
+	  Jarr J = Je[iJ]->J;
 	  unsigned k = 0;
 	  memset(ks, 0, sizeof(size_t) * dim);
-	  Jp_get_nps(nps, Jp, dim);
+	  J_get_nps(nps, J, dim);
 	  do { /* x points "owned" by this J */
-	       double *fJ = J[iJ]->f + fdim * k;
-	       Jp_point(x0, Jp, ks, dim, ccd);
+	       double *fJ = Je[iJ]->f + fdim * k;
+	       J_point(x0, J, ks, dim, ccd);
 	       memset(negative, 0, sizeof(int) * dim);
 	       memset(fJ, 0, sizeof(double) * fdim);
 	       do { /* accumulate all possible sign flips */
@@ -771,7 +768,8 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
 {
      sintegrand_data d;
      double *scratch = NULL;
-     size_t *iscratch = NULL, *Mp = NULL;
+     size_t *iscratch = NULL;
+     Jarr M = NULL;
      int ret = FAILURE;
      unsigned i;
      double volscale = 1; /* scale factor of integration volume */
@@ -801,9 +799,9 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
      d.negative = (unsigned *) malloc(sizeof(int) * dim);
      if (!d.negative) goto done;
 
-     Mp = Jp_alloc(dim);
-     if (!Mp) goto done;
-     Jp_zero(Mp, dim); /* initial M == 0, so integration starts with 1 pt */
+     M = J_alloc(dim);
+     if (!M) goto done;
+     J_zero(M, dim); /* initial M == 0, so integration starts with 1 pt */
 
      d.f = f;
      d.fdata = fdata;
@@ -815,7 +813,7 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
      d.ks = iscratch;
      d.nps = d.ks + dim;
 
-     ret = integrate(dim, fdim, sintegrand, &d, Mp,
+     ret = integrate(dim, fdim, sintegrand, &d, M,
 		     maxEval, reqAbsError, reqRelError, val, err);
 
      for (i = 0; i < fdim; ++i) {
@@ -824,7 +822,7 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
      }
 
 done:
-     free(Mp);
+     free(M);
      free(d.negative);
      free(iscratch);
      free(scratch);
