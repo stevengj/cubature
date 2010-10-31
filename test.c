@@ -41,7 +41,7 @@
 
 #include "cubature.h"
 
-#define VERBOSE 1
+#define VERBOSE 0
 
 #ifdef SCUBATURE
 #  define adapt_integrate sadapt_integrate
@@ -151,9 +151,15 @@ void f_test(unsigned dim, const double *x, void *data_,
 	      double scale = 1.0;
 	      val = 0;
 	      for (i = 0; i < dim; ++i) {
-		   double z = (1 - x[i]) / x[i];
-		   val += z * z;
-		   scale *= K_2_SQRTPI / (x[i] * x[i]);
+		   if (x[i] > 0) {
+			double z = (1 - x[i]) / x[i];
+			val += z * z;
+			scale *= K_2_SQRTPI / (x[i] * x[i]);
+		   }
+		   else {
+			scale = 0;
+			break;
+		   }
 	      }
 	      val = exp(-val) * scale;
 	      break;
