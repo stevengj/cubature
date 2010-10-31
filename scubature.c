@@ -381,7 +381,7 @@ typedef J_data *rb_key;
 typedef unsigned rb_key_data; /* the dimension, passed to compare func */
 #define rb_destroy_key J_data_destroy
 #define rb_compare J_data_compare
-#include "redblack.c"
+#include "redblack.h"
 
 /***************************************************************************/
 /* POINT ENUMERATION */
