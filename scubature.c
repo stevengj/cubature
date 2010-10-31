@@ -180,9 +180,10 @@ static size_t ccd_dnf(unsigned j) {
      return j == 0 ? 1U : (j == 1 ? 1U : (1U << (j-2)));
 }
 
-/* actual # function evaluations for a given level, counting pairs as 2 */
-static size_t ccd_nf2(unsigned j) {
-     return 1 + (j > 0 ? (1U << j) : 0);
+/* actual # function evaluations for a given level compared to previous one,
+   counting pairs as 2 */
+static size_t ccd_dnf2(unsigned j) {
+     return 2 * ccd_dnf(j) - (j == 0);
 }
 
 /***************************************************************************/
@@ -219,7 +220,7 @@ static void Jp_set(size_t *Jp, unsigned i, unsigned j) {
      unsigned i1 = i / (sizeof(size_t) * 2);
      size_t Jp1 = Jp[i1];
      unsigned j0 = (Jp1 >> (i0 * 4)) & 0xf; /* Jp_get(Jp, i) */
-     Jp[i1] = Jp1 ^ ((j0 ^ j) << (i0 * 4));
+     Jp[i1] = Jp1 ^ (((size_t) (j0 ^ j)) << (i0 * 4));
 }
 
 /* return Jp array, uninitialized */
@@ -316,15 +317,13 @@ static int inc_JpN(size_t *Jp, const size_t *Mp, unsigned N, unsigned dim) {
    actual function evaluations not pairs.  Jt is a scratch array. */
 static size_t MpN_nf(const size_t *Mp, unsigned N, unsigned dim,
 		     size_t *Jp) {
-     size_t nf = 0, nf_cur;
+     size_t nf = 0;
      Jp_zero(Jp, dim);
-     N = imin2(N, Jp_sum(Mp, dim)); /* ensure |J|==N is achieved for J <= M */
-     do { /* inefficient way to loop over all |J|==N */
+     do {
+	  size_t nf_cur = 1;
 	  unsigned i;
-	  if (Jp_sum(Jp, dim) != N) continue;
-	  nf_cur = 1;
 	  for (i = 0; i < dim; ++i)
-	       nf_cur *= ccd_nf2(Jp_get(Jp, i));
+	       nf_cur *= ccd_dnf2(Jp_get(Jp, i));
 	  nf += nf_cur;
      } while (inc_JpN(Jp, Mp, N, dim));
      return nf;
