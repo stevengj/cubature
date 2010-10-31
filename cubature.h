@@ -72,6 +72,13 @@ int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
 		     unsigned maxEval, double reqAbsError, double reqRelError, 
 		      double *val, double *err);
 
+/* using sparse grids and Clenshaw-Curtis quadrature:
+   compile with scubature.c instead of (or in addition to) cubature.c,
+   and link with FFTW3 */
+int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
+		     unsigned dim, const double *xmin, const double *xmax, 
+		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		     double *val, double *err);
 #ifdef __cplusplus
 }  /* extern "C" */
 #endif /* __cplusplus */

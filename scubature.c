@@ -6,6 +6,8 @@
 #include <math.h>
 #include <fftw3.h>
 
+#include "cubature.h"
+
 /* error return codes */
 #define SUCCESS 0
 #define FAILURE 1
@@ -410,6 +412,19 @@ static int inc_ks(size_t *ks, const size_t *nps, unsigned dim) {
      return 1;
 }
 
+/* like inc_ks, except neg[i] goes from 0 to 1, and we flip the sign
+   of the corresponding component of x.  However, if x[i] == 0,
+   then that dimension is skipped. */
+static int inc_negative(unsigned *neg, double *x, unsigned dim) {
+     unsigned i;
+     for (i = 0; i < dim && (neg[i] || x[i] == 0); ++i) ;
+     if (i == dim) return 0;
+     neg[i] = 1;
+     x[i] = -x[i];
+     for (i = i - 1; i >= 0; --i) if (x[i] != 0) { neg[i] = 0; x[i] = -x[i]; }
+     return 1;
+}
+
 /* set array x[dim] to the ks-th point in Jp, where 0 <= ks[i] <
    nps[i] with nps set by Jp_get_nps.  All coordinates are set to
    nonnegative values; the actual function value should be summed over
@@ -476,7 +491,7 @@ static void J_eval(unsigned fdim, double *sums,
 typedef void (*integrand_)(unsigned nJ, J_data **J,
 			   unsigned dim, unsigned fdim,
 			   const ccd_rules *ccd,
-			   double *fdata);
+			   void *fdata);
 
 /* dimensions and errors, which we sort in descending by errmax as we
    pick dimensions to refine and track the per-dimension errors */
@@ -519,7 +534,7 @@ static int converged(double err, double val, double abstol, double reltol) {
    been met for every integrand, or until maxEval is exceeded.
 
    Returns FAILURE if a memory allocation error occurs, otherwise SUCCESS. */
-static int integrate(unsigned dim, unsigned fdim, integrand_ f, double *fdata,
+static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
 		     size_t *Mp,
 		     size_t maxEval, double reqAbsError, double reqRelError,
 		     double *val, double *err)
@@ -698,45 +713,102 @@ done:
 		     
 
 /***************************************************************************/
+/* SERIAL API: user integrand is evaluated one pt at a time */
 
-#include <stdio.h>
+typedef struct {
+     integrand f;
+     void *fdata;
+     const double *xmin;
+     const double *xmax;
+     double *x0, *x, *fval;
+     size_t *ks, *nps;
+     unsigned *negative;
+} sintegrand_data;
 
-static double f(double x) { return cos(x - 0.5); }
+static void sintegrand(unsigned nJ, J_data **J,
+		       unsigned dim, unsigned fdim,
+		       const ccd_rules *ccd,
+		       void *d_) {
+     sintegrand_data *d = (sintegrand_data *) d_;
+     integrand f = d->f;
+     void *fdata = d->fdata;
+     double *x0 = d->x0, *x = d->x, *fval = d->fval;
+     const double *xmin = d->xmin;
+     const double *xmax = d->xmax;
+     size_t *ks = d->ks, *nps = d->nps;
+     unsigned *negative = d->negative;
+     unsigned iJ, i;
 
-int main(int argc, char **argv)
+     for (iJ = 0; iJ < nJ; ++iJ) { /* J points */
+	  size_t *Jp = J[iJ]->Jp;
+	  unsigned k = 0;
+	  memset(ks, 0, sizeof(size_t) * dim);
+	  Jp_get_nps(nps, Jp, dim);
+	  do { /* x points "owned" by this J */
+	       double *fJ = J[iJ]->f + fdim * k;
+	       Jp_point(x0, Jp, ks, dim, ccd);
+	       memset(negative, 0, sizeof(int) * dim);
+	       memset(fJ, 0, sizeof(double) * fdim);
+	       do { /* accumulate all possible sign flips */
+		    for (i = 0; i < dim; ++i)
+			 x[i] = xmin[i] + (x0[i]+1) * 0.5 * (xmax[i]-xmin[i]);
+		    f(dim, x, fdata, fdim, fval);
+		    for (i = 0; i < fdim; ++i)
+			 fJ[i] += fval[i];
+	       } while (inc_negative(negative, x0, dim));
+	       ++k;
+	  } while (inc_ks(ks, nps, dim));
+     }
+}
+
+int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
+		     unsigned dim, const double *xmin, const double *xmax, 
+		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		     double *val, double *err)
 {
-     int jmax, j, i;
-     ccd_rules ccd;
-     double sum = 0, exact;
+     sintegrand_data d;
+     double *scratch = NULL;
+     size_t *iscratch = NULL, *Mp = NULL;
+     int ret = FAILURE;
      
-     jmax = argc > 1 ? atoi(argv[1]) : 4;
-     init_ccd_rules(&ccd);
-     grow_ccd_rules(&ccd, jmax);
-
-     /* compute integral of f(x) */
-     exact = sin(0.5) - sin(-1.5);
-     for (j = 0; j < jmax; ++j) {
-	  double sumj = 0;
-	  if (j == 0)
-	       sumj += f(ccd.x[0]) * ccd.w[0][0];
-	  else {
-	       double *w = ccd.w[j];
-	       printf("w[%d] = [ %g", j, w[0]);
-	       sumj += f(ccd.x[0]) * w[0];
-	       for (i = 1; i <= CCD_N(j); ++i) {
-		    sumj += (f(ccd.x[i]) + f(-ccd.x[i])) * w[i];
-		    if (i < 10)
-			 printf(", %g", w[i]);
-	       }
-	       if (i >= 10) printf(", ...");
-	       printf(" ]\n");
-	  }
-	  sum += sumj;
-	  printf("j = %d, contrib = %g, sum = %g, error = %g\n",
-		 j, sumj, sum, sum - exact);
+     /* trivial cases: */
+     if (fdim == 0) return SUCCESS;
+     if (dim == 0) {
+	  f(dim, xmin, fdata, fdim, val);
+	  memset(err, 0, sizeof(double) * fdim);
      }
 
-     destroy_ccd_rules(&ccd);
-     fftw_cleanup();
-     return 0;
+     d.negative = NULL;
+     scratch = (double *) malloc(sizeof(double) * (2*dim + fdim));
+     if (!scratch) goto done;
+     iscratch = (size_t *) malloc(sizeof(size_t) * (dim * 2));
+     if (!iscratch) goto done;
+     d.negative = (unsigned *) malloc(sizeof(int) * dim);
+     if (!d.negative) goto done;
+
+     Mp = Jp_alloc(dim);
+     if (!Mp) goto done;
+     Jp_zero(Mp, dim); /* initial M == 0, so integration starts with 1 pt */
+     
+     d.f = f;
+     d.fdata = fdata;
+     d.xmin = xmin;
+     d.xmax = xmax;
+     d.x0 = scratch;
+     d.x = d.x0 + dim;
+     d.fval = d.x + dim;
+     d.ks = iscratch;
+     d.nps = d.ks + dim;
+
+     ret = integrate(dim, fdim, sintegrand, &d, Mp,
+		     maxEval, reqAbsError, reqRelError, val, err);
+
+done:
+     free(Mp);
+     free(d.negative);
+     free(iscratch);
+     free(scratch);
+     return ret;
 }
+
+/***************************************************************************/
