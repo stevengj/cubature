@@ -41,6 +41,8 @@
 
 #include "cubature.h"
 
+#define VERBOSE 1
+
 #ifdef SCUBATURE
 #  define adapt_integrate sadapt_integrate
 #endif
@@ -181,7 +183,13 @@ void f_test(unsigned dim, const double *x, void *data_,
 	      fprintf(stderr, "unknown integrand %d\n", which_integrand[j]);
 	      exit(EXIT_FAILURE);
      }
-     /* if (count < 100) printf("%d: f(%g, ...) = %g\n", count, x[0], val); */
+#if VERBOSE
+     if (count < 100) {
+	  printf("%d: f(%g", count, x[0]);
+	  for (i = 1; i < dim; ++i) printf(", %g", x[i]);
+	  printf(") = %g\n", val);
+     }
+#endif
      retval[j] = val;
      }
 }

@@ -285,12 +285,12 @@ static size_t Jp_dnf(const size_t *Jp, unsigned dim) {
    Returns 0 when incrementing is done. */
 static int inc_Jp(size_t *Jp, const size_t *Mp, unsigned dim)
 {
-     unsigned i;
+     unsigned i, j;
      /* (this could be made more efficient if needed) */
      for (i = 0; i < dim && Jp_get(Jp, i) == Jp_get(Mp, i); ++i) ;
      if (i == dim) return 0;
      Jp_set(Jp, i, Jp_get(Jp, i) + 1);
-     for (i = i - 1; i >= 0; --i) Jp_set(Jp, i, 0);
+     for (j = 0; j < i; ++j) Jp_set(Jp, j, 0);
      return 1;
 }
 
@@ -298,7 +298,7 @@ static unsigned imin2(unsigned i, unsigned j) { return(i<j ? i : j); }
 
 /* like inc_Jp, but also requires L1 norm of J to be <= N */
 static int inc_JpN(size_t *Jp, const size_t *Mp, unsigned N, unsigned dim) {
-     unsigned i, n = Jp_sum(Jp, dim);
+     unsigned i, j, n = Jp_sum(Jp, dim);
      for (i = 0; i < dim; ++i) {
 	  unsigned j = Jp_get(Jp, i);
 	  n -= j;
@@ -307,7 +307,7 @@ static int inc_JpN(size_t *Jp, const size_t *Mp, unsigned N, unsigned dim) {
      }
      if (i == dim) return 0;
      Jp_set(Jp, i, Jp_get(Jp, i) + 1);
-     for (i = i - 1; i >= 0; --i) Jp_set(Jp, i, 0);
+     for (j = 0; j < i; ++j) Jp_set(Jp, j, 0);
      return 1;
 }
 
@@ -408,7 +408,7 @@ static int inc_ks(size_t *ks, const size_t *nps, unsigned dim) {
      for (i = 0; i < dim && ks[i] == nps[i] - 1; ++i) ;
      if (i == dim) return 0;
      ks[i] += 1;
-     for (i = i - 1; i >= 0; --i) ks[i] = 0;
+     memset(ks, 0, sizeof(size_t) * i);
      return 1;
 }
 
@@ -416,12 +416,12 @@ static int inc_ks(size_t *ks, const size_t *nps, unsigned dim) {
    of the corresponding component of x.  However, if x[i] == 0,
    then that dimension is skipped. */
 static int inc_negative(unsigned *neg, double *x, unsigned dim) {
-     unsigned i;
+     unsigned i, j;
      for (i = 0; i < dim && (neg[i] || x[i] == 0); ++i) ;
      if (i == dim) return 0;
      neg[i] = 1;
      x[i] = -x[i];
-     for (i = i - 1; i >= 0; --i) if (x[i] != 0) { neg[i] = 0; x[i] = -x[i]; }
+     for (j = 0; j < i; ++j) if (x[j] != 0) { neg[j] = 0; x[j] = -x[j]; }
      return 1;
 }
 
@@ -473,8 +473,9 @@ static void J_eval(unsigned fdim, double *sums,
 	  do { /* loop over ks from 0 to nps */
 	       double w = 1;
 	       for (i = 0; i < dim; ++i) {
+		    unsigned j0 = Jp_get(Jp, i);
 		    unsigned j = Jp_get(Jt, i);
-		    w *= ccd->w[j][j > 0 ? ccd_nf(j-1) + ks[i] : 0];
+		    w *= ccd->w[j0][j > 0 ? ccd_nf(j-1) + ks[i] : 0];
 	       }
 	       for (fi = 0; fi < fdim; ++fi)
 		    sums[fi] += w * f[fdim * k + fi];
@@ -611,7 +612,7 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
 	       for (i = 0; i < dim; ++i)
 		    if (Jp_get(Je[ie]->Jp, i) == Jp_get(Mp, i)) {
 			 for (fi = 0; fi < fdim; ++fi) {
-			      double erri = Jsum[fi] / count;
+			      double erri = fabs(Jsum[fi]) / count;
 			      err[fi] += erri;
 			      derrs[i*fdim + fi] += erri;
 			 }
@@ -652,8 +653,8 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
 	       for (fi=0; fi < fdim && converged(rem_err[fi], val[fi],
 						 reqAbsError, reqRelError);
 		    ++fi) ;
-	       if (fi == fdim) break; /* other regions have small errs */
 	       ++di;
+	       if (fi == fdim) break; /* other regions have small errs */
 	  } while (di < dim && (numEval < maxEval || !maxEval));
 	  ne = 0;
 	  Jp_zero(Jp, dim);
@@ -683,7 +684,7 @@ static int integrate(unsigned dim, unsigned fdim, integrand_ f, void *fdata,
 		    for (i = 0; i < dim; ++i)
 			 if (Jp_get(Je[ie]->Jp, i) == Jp_get(Mp, i))
 			      for (fi = 0; fi < fdim; ++fi)
-				   derrs[i*fdim + fi] += Jsum[fi] / count;
+				   derrs[i*fdim + fi] += fabs(Jsum[fi])/count;
 	  }
 	  for (fi = 0; fi < fdim; ++fi) {
 	       err[fi] = 0;
@@ -770,13 +771,25 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
      double *scratch = NULL;
      size_t *iscratch = NULL, *Mp = NULL;
      int ret = FAILURE;
+     unsigned i;
+     double volscale = 1; /* scale factor of integration volume */
      
      /* trivial cases: */
      if (fdim == 0) return SUCCESS;
      if (dim == 0) {
 	  f(dim, xmin, fdata, fdim, val);
 	  memset(err, 0, sizeof(double) * fdim);
+	  return SUCCESS;
      }
+
+     for (i = 0; i < dim; ++i)
+	  volscale *= fabs(xmax[i] - xmin[i]) * 0.5;
+     if (volscale == 0) { /* empty integration domain */
+	  memset(val, 0, sizeof(double) * fdim);
+	  memset(err, 0, sizeof(double) * fdim);
+	  return SUCCESS;
+     }
+     reqAbsError /= volscale;
 
      d.negative = NULL;
      scratch = (double *) malloc(sizeof(double) * (2*dim + fdim));
@@ -789,7 +802,7 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
      Mp = Jp_alloc(dim);
      if (!Mp) goto done;
      Jp_zero(Mp, dim); /* initial M == 0, so integration starts with 1 pt */
-     
+
      d.f = f;
      d.fdata = fdata;
      d.xmin = xmin;
@@ -802,6 +815,11 @@ int sadapt_integrate(unsigned fdim, integrand f, void *fdata,
 
      ret = integrate(dim, fdim, sintegrand, &d, Mp,
 		     maxEval, reqAbsError, reqRelError, val, err);
+
+     for (i = 0; i < dim; ++i) {
+	  val[i] *= volscale;
+	  err[i] *= volscale;
+     }
 
 done:
      free(Mp);
