@@ -175,7 +175,7 @@ static unsigned eval(const unsigned *cm, unsigned cmi, double *cval,
 	       + (id == cmi ? (cm[id] ? 1 + (1 << (cm[id]-1)) : 1) : 0);
 	  unsigned cnx = (id == cmi ? (cm[id] ? (1 << (cm[id]-1)) : 1)
 			  : (1 << (cm[id])));
-	  unsigned nx = cm[id] <= mid ? cnx : 1 + 2 * (1 << mid);
+	  unsigned nx = cm[id] <= mid ? cnx : (1 << mid);
 
 	  if (id != cmi) {
 	       voff = eval(cm, cmi, cval, m, md, fdim, dim, id + 1,
@@ -243,7 +243,7 @@ static void eval_integral(valcache vc, const unsigned *m,
 	       *mi = i;
 	  }
      }
-     printf("eval: %g +/- %g (dim %u)\n", val[0], err[0], *mi);
+     /* printf("eval: %g +/- %g (dim %u)\n", val[0], err[0], *mi); */
 }
 
 /***************************************************************************/
@@ -254,7 +254,7 @@ static int converged(unsigned fdim, const double *val, const double *err,
      unsigned i;
      for (i = 0; i < fdim; ++i)
 	  if (err[i] > reqAbsError
-	      || err[i] > reqRelError * val[i])
+	      && err[i] > reqRelError * val[i])
 	       return 0;
      return 1;
 }
@@ -355,9 +355,9 @@ int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
      int ret;
      unsigned nbuf = 0;
      double *buf = NULL;
-     padapt_integrate_v_buf(fdim, f, fdata, dim, xmin, xmax,
-			    maxEval, reqAbsError, reqRelError,
-			    &buf, &nbuf, DEFAULT_MAX_NBUF, val, err);
+     ret = padapt_integrate_v_buf(fdim, f, fdata, dim, xmin, xmax,
+				  maxEval, reqAbsError, reqRelError,
+				  &buf, &nbuf, DEFAULT_MAX_NBUF, val, err);
      free(buf);
      return ret;
 }
