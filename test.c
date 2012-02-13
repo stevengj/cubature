@@ -43,8 +43,10 @@
 
 #define VERBOSE 0
 
-#ifdef SCUBATURE
+#if defined(SCUBATURE)
 #  define adapt_integrate sadapt_integrate
+#elif defined(PCUBATURE)
+#  define adapt_integrate padapt_integrate
 #endif
 
 int count = 0;

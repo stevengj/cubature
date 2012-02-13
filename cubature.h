@@ -72,6 +72,24 @@ int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
 		     unsigned maxEval, double reqAbsError, double reqRelError, 
 		      double *val, double *err);
 
+/* adaptive integration by increasing the degree of (tensor-product
+   Clenshaw-Curtis) quadrature rules ("p-adaptive"), rather than
+   subdividing the domain ("h-adaptive").  Possibly better for
+   smooth integrands in low dimensions */
+int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
+                      unsigned dim, const double *xmin, const double *xmax,
+		      unsigned maxEval, double reqAbsError, double reqRelError,
+		      double **buf, unsigned *nbuf, unsigned max_nbuf,
+		      double *val, double *err);
+int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
+		       unsigned dim, const double *xmin, const double *xmax, 
+		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		      double *val, double *err);
+int padapt_integrate(unsigned fdim, integrand f, void *fdata,
+		     unsigned dim, const double *xmin, const double *xmax, 
+		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		     double *val, double *err);
+
 /* using sparse grids and Clenshaw-Curtis quadrature:
    compile with scubature.c instead of (or in addition to) cubature.c,
    and link with FFTW3 */
