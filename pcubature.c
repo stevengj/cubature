@@ -189,7 +189,7 @@ static unsigned eval(const unsigned *cm, unsigned cmi, double *cval,
 			    weight * w[i], val);
 	  }
 
-	  voff += (cnx - nx) * fdim
+	  voff += (cnx - nx) * fdim * 2
 	       * num_cacheval(cm + id+1, cmi - (id+1), dim - (id+1));
      }
      return voff;
