@@ -1,6 +1,8 @@
 FILES = README COPYING cubature.c cubature.h test.c ChangeLog
 
-CFLAGS = -g -Wall -ansi -pedantic
+# CFLAGS = -pg -O3 -fno-inline-small-functions -Wall -ansi -pedantic
+# CFLAGS = -g -Wall -ansi -pedantic
+CFLAGS = -O3 -Wall -ansi -pedantic
 
 all: cubature scubature pcubature
 
@@ -8,7 +10,7 @@ cubature: test.c cubature.c cubature.h
 	cc $(CFLAGS) -o $@ test.c cubature.c -lm
 
 pcubature: test.c pcubature.c cubature.h clencurt.h
-	cc $(CFLAGS) -DPCUBATURE -o $@ test.c pcubature.c
+	cc $(CFLAGS) -DPCUBATURE -o $@ test.c pcubature.c -lm
 
 scubature: test.c scubature.c cubature.h redblack.h
 	cc $(CFLAGS) -DSCUBATURE -o $@ test.c scubature.c -lfftw3 -lm
