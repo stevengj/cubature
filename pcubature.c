@@ -263,16 +263,20 @@ static int converged(unsigned fdim, const double *val, const double *err,
 /* Vectorized version with user-supplied buffer to store points and values.
    The buffer *buf should be of length *nbuf * dim on entry (these parameters
    are changed upon return to the final buffer and length that was used).
-   The buffer length will be kept <= max(max_nbuf, 1) * dim */
+   The buffer length will be kept <= max(max_nbuf, 1) * dim.
+
+   Also allows the caller to specify an array m[dim] of starting degrees
+   for the rule, which upon return will hole the final degrees.  The
+   number of points in each dimension i is 2^(m[i]+1) + 1. */
    
 int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
                       unsigned dim, const double *xmin, const double *xmax,
 		      unsigned maxEval, double reqAbsError, double reqRelError,
+		      unsigned *m,
 		      double **buf, unsigned *nbuf, unsigned max_nbuf,
 		      double *val, double *err)
 {
      int ret = FAILURE;
-     unsigned m[MAXDIM];
      double V = 1;
      unsigned i, numEval = 0, new_nbuf;
      valcache vc = {0, NULL};
@@ -290,12 +294,10 @@ int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
 	  err[i] = HUGE_VAL;
      }
 
-     new_nbuf = 1;
-     for (i = 0; i < dim; ++i) {
-	  m[i] = 0;
-	  new_nbuf *= 3;
+     for (i = 0; i < dim; ++i)
 	  V *= (xmax[i] - xmin[i]) * 0.5; /* scale factor for C-C volume */
-     }
+
+     new_nbuf = num_cacheval(m, dim, dim);
 
      if (max_nbuf < 1) max_nbuf = 1;
      if (new_nbuf > max_nbuf) new_nbuf = max_nbuf;
@@ -353,11 +355,12 @@ int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
                       double *val, double *err)
 {
      int ret;
-     unsigned nbuf = 0;
+     unsigned nbuf = 0, m[MAXDIM];
      double *buf = NULL;
+     memset(m, 0, sizeof(unsigned) * dim);
      ret = padapt_integrate_v_buf(fdim, f, fdata, dim, xmin, xmax,
 				  maxEval, reqAbsError, reqRelError,
-				  &buf, &nbuf, DEFAULT_MAX_NBUF, val, err);
+				  m, &buf, &nbuf, DEFAULT_MAX_NBUF, val, err);
      free(buf);
      return ret;
 }
@@ -383,15 +386,16 @@ int padapt_integrate(unsigned fdim, integrand f, void *fdata,
 		     double *val, double *err)
 {
      int ret;
-     unsigned nbuf = 0;
+     unsigned nbuf = 0, m[MAXDIM];
      double *buf = NULL;
      fv_data d;
 
      d.f = f; d.fdata = fdata;
+     memset(m, 0, sizeof(unsigned) * dim);
      ret = padapt_integrate_v_buf(
 	  fdim, fv, &d, dim, xmin, xmax, 
 	  maxEval, reqAbsError, reqRelError, 
-	  &buf, &nbuf, 16 /* max_nbuf > 0 to amortize function overhead */,
+	  m, &buf, &nbuf, 16 /* max_nbuf > 0 to amortize function overhead */,
 	  val, err);
      free(buf);
      return ret;

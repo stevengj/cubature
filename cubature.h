@@ -79,6 +79,7 @@ int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
 int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
                       unsigned dim, const double *xmin, const double *xmax,
 		      unsigned maxEval, double reqAbsError, double reqRelError,
+		      unsigned *m,
 		      double **buf, unsigned *nbuf, unsigned max_nbuf,
 		      double *val, double *err);
 int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
