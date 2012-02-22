@@ -217,9 +217,8 @@ static void evals(valcache vc, const unsigned *m, unsigned md,
    dimension to subdivide next (the largest error contribution) in *mi */
 static void eval_integral(valcache vc, const unsigned *m, 
 			  unsigned fdim, unsigned dim, double V,
-			  unsigned *mi, double *val, double *err)
+			  unsigned *mi, double *val, double *err, double *val1)
 {
-     double val1[MAXDIM];
      double maxerr = 0;
      unsigned i, j;
      
@@ -280,6 +279,7 @@ int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
      double V = 1;
      unsigned i, numEval = 0, new_nbuf;
      valcache vc = {0, NULL};
+     double *val1 = NULL;
 
      if (fdim == 0) return SUCCESS; /* nothing to do */
      if (dim > MAXDIM) return FAILURE; /* unsupported */
@@ -313,10 +313,12 @@ int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
 		       *buf, *nbuf) != SUCCESS)
 	  goto done;
 
+     val1 = (double *) malloc(sizeof(double) * fdim);
+
      while (1) {
 	  unsigned mi;
 
-	  eval_integral(vc, m, fdim, dim, V, &mi, val, err);
+	  eval_integral(vc, m, fdim, dim, V, &mi, val, err, val1);
 	  if (converged(fdim, val, err, reqAbsError, reqRelError)
 	      || (numEval > maxEval && maxEval)) {
 	       ret = SUCCESS;
@@ -341,6 +343,7 @@ int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
      }
 
 done:
+     free(val1);
      free_cachevals(&vc);
      return ret;
 }
