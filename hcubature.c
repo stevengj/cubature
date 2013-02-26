@@ -885,7 +885,7 @@ static int converged(unsigned fdim, const esterr *ee,
 		     double reqAbsError, double reqRelError, error_norm norm)
 #define ERR(j) ee[j].err
 #define VAL(j) ee[j].val
-#include "converged.c"
+#include "converged.h"
 
 /***************************************************************************/
 

@@ -257,7 +257,7 @@ static int converged(unsigned fdim, const double *vals, const double *errs,
 		     double reqAbsError, double reqRelError, error_norm norm)
 #define ERR(j) errs[j]
 #define VAL(j) vals[j]
-#include "converged.c"
+#include "converged.h"
 
 /***************************************************************************/
 /* Vectorized version with user-supplied buffer to store points and values.
