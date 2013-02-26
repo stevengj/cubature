@@ -94,7 +94,7 @@ especially when high accuracy is needed.  It is not usually a good idea
 in more than 3 dimensions.
 
 -----------------------------------------------------------------------
-Usage:
+== Usage ==
 
 You should compile cubature.c and link it with your program, and
 #include the header file cubature.h.
@@ -175,7 +175,7 @@ additional data, you can just pass FDATA = NULL and ignore the FDATA
 argument to F.
 
 -----------------------------------------------------------------------
-"Vectorized" interface:
+== "Vectorized" interface ==
 
 For parallelization and other purposes, it is useful to call a single
 integrand function with an array of points to evaluate, rather than a
@@ -198,7 +198,7 @@ Now, x is not a single point, but an array of npts points, and upon
 return the values of all fdim integrands at all npts points should be
 stored in fval.  In particular, x[i*ndim + j] is the j-th coordinate
 of the i-th point (i < npts and j < ndim), and the k-th function
-evaluation (k < fdim) for the i-th point is returned in fval[k*npt + i].
+evaluation (k < fdim) for the i-th point is returned in fval[i*fdim + k].
 
 Again, the return value should be 0 on success or nonzero to terminate
 the integration immediately (e.g. if an error occurred).

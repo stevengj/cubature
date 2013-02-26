@@ -375,22 +375,7 @@ int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
      return ret;
 }
 
-/* wrapper around non-vectorized integrand */
-typedef struct fv_data_s { integrand f; void *fdata; } fv_data;
-static int fv(unsigned ndim, unsigned npt,
-	      const double *x, void *d_,
-	      unsigned fdim, double *fval)
-{
-     fv_data *d = (fv_data *) d_;
-     integrand f = d->f;
-     void *fdata = d->fdata;
-     unsigned i;
-     /* printf("npt = %u\n", npt); */
-     for (i = 0; i < npt; ++i) 
-	  if (f(ndim, x + i*ndim, fdata, fdim, fval + i*fdim))
-	       return FAILURE;
-     return SUCCESS;
-}
+#include "vwrapper.h"
 
 int padapt_integrate(unsigned fdim, integrand f, void *fdata,
 		     unsigned dim, const double *xmin, const double *xmax,

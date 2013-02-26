@@ -6,10 +6,10 @@ CFLAGS = -O3 -Wall -ansi -pedantic
 
 all: htest ptest
 
-htest: test.c hcubature.c cubature.h converged.c
+htest: test.c hcubature.c cubature.h converged.c vwrapper.h
 	cc $(CFLAGS) -o $@ test.c hcubature.c -lm
 
-ptest: test.c pcubature.c cubature.h clencurt.h converged.c
+ptest: test.c pcubature.c cubature.h clencurt.h converged.c vwrapper.h
 	cc $(CFLAGS) -DPCUBATURE -o $@ test.c pcubature.c -lm
 
 clencurt.h: clencurt_gen.c # only depend on .c file so end-users don't re-gen

@@ -511,24 +511,25 @@ static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, voi
      for (i = 0; i < dim * nR; ++i) diff[i] = 0;
 
      for (j = 0; j < fdim; ++j) {
+	  const double *v = vals + j;
+#         define VALS(i) v[fdim*(i)]	       
 	  for (iR = 0; iR < nR; ++iR) {
 	       double result, res5th;
 	       double val0, sum2=0, sum3=0, sum4=0, sum5=0;
 	       unsigned k, k0 = 0;
-	       
 	       /* accumulate j-th function values into j-th integrals
 		     NOTE: this relies on the ordering of the eval functions
 		     above, as well as on the internal structure of
 		     the evalR0_0fs4d function */
 
-	       val0 = vals[0]; /* central point */
+	       val0 = VALS(0); /* central point */
 	       k0 += 1;
 
 	       for (k = 0; k < dim; ++k) {
-		    double v0 = vals[k0 + 4*k];
-		    double v1 = vals[(k0 + 4*k) + 1];
-		    double v2 = vals[(k0 + 4*k) + 2];
-		    double v3 = vals[(k0 + 4*k) + 3];
+		    double v0 = VALS(k0 + 4*k);
+		    double v1 = VALS((k0 + 4*k) + 1);
+		    double v2 = VALS((k0 + 4*k) + 2);
+		    double v3 = VALS((k0 + 4*k) + 3);
 		    
 		    sum2 += v0 + v1;
 		    sum3 += v2 + v3;
@@ -539,11 +540,11 @@ static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, voi
 	       k0 += 4*k;
 
 	       for (k = 0; k < numRR0_0fs(dim); ++k)
-		    sum4 += vals[k0 + k];
+		    sum4 += VALS(k0 + k);
 	       k0 += k;
 	       
 	       for (k = 0; k < numR_Rfs(dim); ++k)
-		    sum5 += vals[k0 + k];
+		    sum5 += VALS(k0 + k);
 	       
 	       /* Calculate fifth and seventh order results */
 	       result = R[iR].h.vol * (r->weight1 * val0 + weight2 * sum2 + r->weight3 * sum3 + weight4 * sum4 + r->weight5 * sum5);
@@ -552,9 +553,11 @@ static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, voi
 	       R[iR].ee[j].val = result;
 	       R[iR].ee[j].err = fabs(res5th - result);
 	       
-	       vals += r_->num_points;
+	       v += r_->num_points * fdim;
 	  }
+#         undef VALS
      }
+
 
      /* figure out dimension to split: */
      for (iR = 0; iR < nR; ++iR) {
@@ -691,18 +694,19 @@ static int rule15gauss_evalError(rule *r,
 	       npts = 1;
 	       for (j = 0; j < (n - 1) / 2; ++j) {
 		    int j2 = 2*j + 1;
-		    double v = vals[npts] + vals[npts+1];
+		    double v = vals[fdim*npts] + vals[fdim*npts+fdim];
 		    result_gauss += wg[j] * v;
 		    result_kronrod += wgk[j2] * v;
-		    result_abs += wgk[j2] * (fabs(vals[npts]) 
-					     + fabs(vals[npts+1]));
+		    result_abs += wgk[j2] * (fabs(vals[fdim*npts]) 
+					     + fabs(vals[fdim*npts+fdim]));
 		    npts += 2;
 	       }
 	       for (j = 0; j < n/2; ++j) {
 		    int j2 = 2*j;
-		    result_kronrod += wgk[j2] * (vals[npts] + vals[npts+1]);
-		    result_abs += wgk[j2] * (fabs(vals[npts]) 
-					     + fabs(vals[npts+1]));
+		    result_kronrod += wgk[j2] * (vals[fdim*npts] 
+						 + vals[fdim*npts+fdim]);
+		    result_abs += wgk[j2] * (fabs(vals[fdim*npts]) 
+					     + fabs(vals[fdim*npts+fdim]));
 		    npts += 2;
 	       }
 	       
@@ -718,14 +722,14 @@ static int rule15gauss_evalError(rule *r,
 	       npts = 1;
 	       for (j = 0; j < (n - 1) / 2; ++j) {
 		    int j2 = 2*j + 1;
-		    result_asc += wgk[j2] * (fabs(vals[npts]-mean)
-					     + fabs(vals[npts+1]-mean));
+		    result_asc += wgk[j2] * (fabs(vals[fdim*npts]-mean)
+					     + fabs(vals[fdim*npts+fdim]-mean));
 		    npts += 2;
 	       }
 	       for (j = 0; j < n/2; ++j) {
 		    int j2 = 2*j;
-		    result_asc += wgk[j2] * (fabs(vals[npts]-mean)
-					     + fabs(vals[npts+1]-mean));
+		    result_asc += wgk[j2] * (fabs(vals[fdim*npts]-mean)
+					     + fabs(vals[fdim*npts+fdim]-mean));
 		    npts += 2;
 	       }
 	       err = fabs(result_kronrod - result_gauss) * halfwidth;
@@ -742,7 +746,7 @@ static int rule15gauss_evalError(rule *r,
 	       R[iR].ee[k].err = err;
 	       
 	       /* increment vals to point to next batch of results */
-	       vals += 15;
+	       vals += 1;
 	  }
      }
      return SUCCESS;
@@ -1052,23 +1056,7 @@ int hadapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
 		      maxEval, reqAbsError, reqRelError, norm, val, err, 1);
 }
 
-/* wrapper around non-vectorized integrand */
-typedef struct fv_data_s { integrand f; void *fdata; double *fval1; } fv_data;
-static int fv(unsigned ndim, unsigned npt,
-	      const double *x, void *d_,
-	      unsigned fdim, double *fval)
-{
-     fv_data *d = (fv_data *) d_;
-     double *fval1 = d->fval1;
-     unsigned i, k;
-     /* printf("npt = %u\n", npt); */
-     for (i = 0; i < npt; ++i) {
-	  if (d->f(ndim, x + i*ndim, d->fdata, fdim, fval1))
-	       return FAILURE;
-	  for (k = 0; k < fdim; ++k) fval[k*npt + i] = fval1[k];
-     }
-     return SUCCESS;
-}
+#include "vwrapper.h"
 
 int hadapt_integrate(unsigned fdim, integrand f, void *fdata, 
 		     unsigned dim, const double *xmin, const double *xmax, 
@@ -1082,18 +1070,8 @@ int hadapt_integrate(unsigned fdim, integrand f, void *fdata,
      if (fdim == 0) return SUCCESS; /* nothing to do */     
      
      d.f = f; d.fdata = fdata;
-     d.fval1 = (double *) malloc(sizeof(double) * fdim);
-     if (!d.fval1) {
-	  unsigned i;
-	  for (i = 0; i < fdim; ++i) {
-	       val[i] = 0;
-	       err[i] = HUGE_VAL; 
-	  }
-	  return -2; /* ERROR */
-     }
      ret = integrate(fdim, fv, &d, dim, xmin, xmax, 
 		     maxEval, reqAbsError, reqRelError, norm, val, err, 0);
-     free(d.fval1);
      return ret;
 }
 
