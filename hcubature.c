@@ -116,11 +116,6 @@ typedef struct {
      double val, err;
 } esterr;
 
-static double relError(esterr ee)
-{
-     return (ee.val == 0.0 ? HUGE_VAL : fabs(ee.err / ee.val));
-}
-
 static double errMax(unsigned fdim, const esterr *ee)
 {
      double errmax = 0;
@@ -506,7 +501,8 @@ static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, voi
      }
 
      /* Evaluate the integrand function(s) at all the points */
-     f(dim, npts, pts, fdata, fdim, vals);
+     if (f(dim, npts, pts, fdata, fdim, vals))
+	  return FAILURE;
 
      /* we are done with the points, and so we can re-use the pts
 	array to store the maximum difference diff[i] in each dimension 
@@ -680,7 +676,8 @@ static int rule15gauss_evalError(rule *r,
 	  R[iR].splitDim = 0; /* no choice but to divide 0th dimension */
      }
 
-     f(1, npts, pts, fdata, fdim, vals);
+     if (f(1, npts, pts, fdata, fdim, vals))
+	  return FAILURE;
      
      for (k = 0; k < fdim; ++k) {
 	  for (iR = 0; iR < nR; ++iR) {
@@ -880,9 +877,23 @@ static heap_item heap_pop(heap *h)
 
 /***************************************************************************/
 
+static int converged(unsigned fdim, const esterr *ee,
+		     double reqAbsError, double reqRelError, error_norm norm)
+#define ERR(j) ee[j].err
+#define VAL(j) ee[j].val
+#include "converged.c"
+
+/***************************************************************************/
+
 /* adaptive integration, analogous to adaptintegrator.cpp in HIntLib */
 
-static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdata, const hypercube *h, unsigned maxEval, double reqAbsError, double reqRelError, double *val, double *err, int parallel)
+static int ruleadapt_integrate(rule *r, unsigned fdim, 
+			       integrand_v f, void *fdata, 
+			       const hypercube *h, 
+			       unsigned maxEval,
+			       double reqAbsError, double reqRelError,
+			       error_norm norm,
+			       double *val, double *err, int parallel)
 {
      unsigned numEval = 0;
      heap regions;
@@ -890,6 +901,8 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
      region *R = NULL; /* array of regions to evaluate */
      unsigned nR_alloc = 0;
      esterr *ee = NULL;
+
+     if (norm < 0 || norm > ERROR_LINF) return FAILURE; /* invalid norm */
 
      regions = heap_alloc(1, fdim);
      if (!regions.ee || !regions.items) goto bad;
@@ -908,11 +921,8 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
      numEval += r->num_points;
      
      while (numEval < maxEval || !maxEval) {
-	  for (j = 0; j < fdim && (regions.ee[j].err <= reqAbsError
-				   || relError(regions.ee[j]) <= reqRelError);
-	       ++j) ;
-	  if (j == fdim)
-	       break; /* convergence */
+	  if (converged(fdim, regions.ee, reqAbsError, reqRelError, norm))
+	       break;
 
 	  if (parallel) { /* maximize potential parallelism */
 	       /* adapted from I. Gladwell, "Vectorization of one
@@ -955,10 +965,8 @@ static int ruleadapt_integrate(rule *r, unsigned fdim, integrand_v f, void *fdat
 		    if (cut_region(R+nR, R+nR+1)) goto bad;
 		    numEval += r->num_points * 2;
 		    nR += 2;
-		    for (j = 0; j < fdim 
-			      && (ee[j].err <= reqAbsError
-				  || relError(ee[j]) <= reqRelError); ++j) ;
-		    if (j == fdim) break; /* other regions have small errs */
+		    if (converged(fdim, ee, reqAbsError, reqRelError, norm))
+			 break; /* other regions have small errs */
 	       } while (regions.n > 0 && (numEval < maxEval || !maxEval));
 	       if (eval_regions(nR, R, f, fdata, r)
 		   || heap_push_many(&regions, nR, R))
@@ -1000,6 +1008,7 @@ bad:
 static int integrate(unsigned fdim, integrand_v f, void *fdata, 
 		     unsigned dim, const double *xmin, const double *xmax, 
 		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		     error_norm norm,
 		     double *val, double *err, int parallel)
 {
      rule *r;
@@ -1025,42 +1034,46 @@ static int integrate(unsigned fdim, integrand_v f, void *fdata,
      h = make_hypercube_range(dim, xmin, xmax);
      status = !h.data ? FAILURE
 	  : ruleadapt_integrate(r, fdim, f, fdata, &h,
-				maxEval, reqAbsError, reqRelError,
+				maxEval, reqAbsError, reqRelError, norm,
 				val, err, parallel);
      destroy_hypercube(&h);
      destroy_rule(r);
      return status;
 }
 
-int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata, 
-		      unsigned dim, const double *xmin, const double *xmax, 
-		     unsigned maxEval, double reqAbsError, double reqRelError, 
-		      double *val, double *err)
+int hadapt_integrate_v(unsigned fdim, integrand_v f, void *fdata, 
+		       unsigned dim, const double *xmin, const double *xmax, 
+		       unsigned maxEval, double reqAbsError, double reqRelError, 
+		       error_norm norm,
+		       double *val, double *err)
 {
      return integrate(fdim, f, fdata, dim, xmin, xmax, 
-		      maxEval, reqAbsError, reqRelError, val, err, 1);
+		      maxEval, reqAbsError, reqRelError, norm, val, err, 1);
 }
 
 /* wrapper around non-vectorized integrand */
 typedef struct fv_data_s { integrand f; void *fdata; double *fval1; } fv_data;
-static void fv(unsigned ndim, unsigned npt,
-	       const double *x, void *d_,
-	       unsigned fdim, double *fval)
+static int fv(unsigned ndim, unsigned npt,
+	      const double *x, void *d_,
+	      unsigned fdim, double *fval)
 {
      fv_data *d = (fv_data *) d_;
      double *fval1 = d->fval1;
      unsigned i, k;
      /* printf("npt = %u\n", npt); */
      for (i = 0; i < npt; ++i) {
-	  d->f(ndim, x + i*ndim, d->fdata, fdim, fval1);
+	  if (d->f(ndim, x + i*ndim, d->fdata, fdim, fval1))
+	       return FAILURE;
 	  for (k = 0; k < fdim; ++k) fval[k*npt + i] = fval1[k];
      }
+     return SUCCESS;
 }
 
-int adapt_integrate(unsigned fdim, integrand f, void *fdata, 
-		    unsigned dim, const double *xmin, const double *xmax, 
-		    unsigned maxEval, double reqAbsError, double reqRelError, 
-		    double *val, double *err)
+int hadapt_integrate(unsigned fdim, integrand f, void *fdata, 
+		     unsigned dim, const double *xmin, const double *xmax, 
+		     unsigned maxEval, double reqAbsError, double reqRelError, 
+		     error_norm norm,
+		     double *val, double *err)
 {
      int ret;
      fv_data d;
@@ -1078,7 +1091,7 @@ int adapt_integrate(unsigned fdim, integrand f, void *fdata,
 	  return -2; /* ERROR */
      }
      ret = integrate(fdim, fv, &d, dim, xmin, xmax, 
-		     maxEval, reqAbsError, reqRelError, val, err, 0);
+		     maxEval, reqAbsError, reqRelError, norm, val, err, 0);
      free(d.fval1);
      return ret;
 }

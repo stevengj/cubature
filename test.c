@@ -43,10 +43,10 @@
 
 #define VERBOSE 0
 
-#if defined(SCUBATURE)
-#  define adapt_integrate sadapt_integrate
-#elif defined(PCUBATURE)
+#if defined(PCUBATURE)
 #  define adapt_integrate padapt_integrate
+#else
+#  define adapt_integrate hadapt_integrate
 #endif
 
 int count = 0;
@@ -134,8 +134,8 @@ static double morokoff(unsigned dim, const double *x, void *params)
 
 /*** end of GSL test functions ***/
 
-void f_test(unsigned dim, const double *x, void *data_,
-	    unsigned fdim, double *retval)
+int f_test(unsigned dim, const double *x, void *data_,
+	   unsigned fdim, double *retval)
 {
      double val;
      unsigned i, j;
@@ -200,6 +200,7 @@ void f_test(unsigned dim, const double *x, void *data_,
 #endif
      retval[j] = val;
      }
+     return 0;
 }
 
 #define K_PI 3.14159265358979323846
@@ -299,9 +300,9 @@ int main(int argc, char **argv)
      printf("%u-dim integral, tolerance = %g\n", dim, tol);
      adapt_integrate(integrand_fdim, f_test, NULL, 
 		     dim, xmin, xmax, 
-		     maxEval, 0, tol, val, err);
+		     maxEval, 0, tol, ERROR_INDIVIDUAL, val, err);
      for (i = 0; i < integrand_fdim; ++i) {
-	  printf("integrand %d: integral = %g, est err = %g, true err = %g\n", 
+	  printf("integrand %d: integral = %0.11g, est err = %g, true err = %g\n", 
 		 which_integrand[i], val[i], err[i], 
 		 fabs(val[i] - exact_integral(which_integrand[i], dim, xmax)));
      }

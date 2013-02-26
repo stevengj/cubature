@@ -63,17 +63,18 @@ static void free_cachevals(valcache *v)
 /* recursive loop over all cubature points for the given (m,mi) cache entry:
    add each point to the buffer buf, evaluating all at once whenever the
    buffer is full or when we are done */
-static void compute_cacheval(const unsigned *m, unsigned mi, 
-			     double *val, unsigned *vali,
-			     unsigned fdim, integrand_v f, void *fdata,
-			     unsigned dim, unsigned id, double *p,
-			     const double *xmin, const double *xmax,
-			     double *buf, unsigned nbuf, unsigned *ibuf)
+static int compute_cacheval(const unsigned *m, unsigned mi, 
+			    double *val, unsigned *vali,
+			    unsigned fdim, integrand_v f, void *fdata,
+			    unsigned dim, unsigned id, double *p,
+			    const double *xmin, const double *xmax,
+			    double *buf, unsigned nbuf, unsigned *ibuf)
 {
      if (id == dim) { /* add point to buffer of points */
 	  memcpy(buf + (*ibuf)++ * dim, p, sizeof(double) * dim);
 	  if (*ibuf == nbuf) { /* flush buffer */
-	       f(dim, nbuf, buf, fdata, fdim, val + *vali);
+	       if (f(dim, nbuf, buf, fdata, fdim, val + *vali))
+		    return FAILURE;
 	       *vali += *ibuf * fdim;
 	       *ibuf = 0;
 	  }
@@ -87,21 +88,25 @@ static void compute_cacheval(const unsigned *m, unsigned mi,
 			    : (1 << (m[id])));
 	  if (id != mi) {
 	       p[id] = c;
-	       compute_cacheval(m, mi, val, vali, fdim, f, fdata,
-				dim, id + 1, p,
-				xmin, xmax, buf, nbuf, ibuf);
+	       if (compute_cacheval(m, mi, val, vali, fdim, f, fdata,
+				    dim, id + 1, p,
+				    xmin, xmax, buf, nbuf, ibuf))
+		    return FAILURE;
 	  }
 	  for (i = 0; i < nx; ++i) {
 	       p[id] = c + r * x[i];
-	       compute_cacheval(m, mi, val, vali, fdim, f, fdata,
-				dim, id + 1, p,
-				xmin, xmax, buf, nbuf, ibuf);
+	       if (compute_cacheval(m, mi, val, vali, fdim, f, fdata,
+				    dim, id + 1, p,
+				    xmin, xmax, buf, nbuf, ibuf))
+		    return FAILURE;
 	       p[id] = c - r * x[i];
-	       compute_cacheval(m, mi, val, vali, fdim, f, fdata,
-				dim, id + 1, p,
-				xmin, xmax, buf, nbuf, ibuf);
+	       if (compute_cacheval(m, mi, val, vali, fdim, f, fdata,
+				    dim, id + 1, p,
+				    xmin, xmax, buf, nbuf, ibuf))
+		    return FAILURE;
 	  }
      }
+     return SUCCESS;
 }
 
 static unsigned num_cacheval(const unsigned *m, unsigned mi, unsigned dim)
@@ -135,13 +140,14 @@ static int add_cacheval(valcache *vc,
      vc->c[ic].val = (double *) malloc(sizeof(double) * nval);
      if (!vc->c[ic].val) return FAILURE;
 
-     compute_cacheval(m, mi, vc->c[ic].val, &vali,
-		      fdim, f, fdata,
-		      dim, 0, p, xmin, xmax,
-		      buf, nbuf, &ibuf);
+     if (compute_cacheval(m, mi, vc->c[ic].val, &vali,
+			  fdim, f, fdata,
+			  dim, 0, p, xmin, xmax,
+			  buf, nbuf, &ibuf))
+	  return FAILURE;
 
      if (ibuf > 0) /* flush remaining buffer */
-	  f(dim, ibuf, buf, fdata, fdim, vc->c[ic].val + vali);
+	  return f(dim, ibuf, buf, fdata, fdim, vc->c[ic].val + vali);
 
      return SUCCESS;
 }
@@ -247,16 +253,11 @@ static void eval_integral(valcache vc, const unsigned *m,
 
 /***************************************************************************/
 
-static int converged(unsigned fdim, const double *val, const double *err,
-		     double reqAbsError, double reqRelError)
-{
-     unsigned i;
-     for (i = 0; i < fdim; ++i)
-	  if (err[i] > reqAbsError
-	      && err[i] > reqRelError * val[i])
-	       return 0;
-     return 1;
-}
+static int converged(unsigned fdim, const double *vals, const double *errs,
+		     double reqAbsError, double reqRelError, error_norm norm)
+#define ERR(j) errs[j]
+#define VAL(j) vals[j]
+#include "converged.c"
 
 /***************************************************************************/
 /* Vectorized version with user-supplied buffer to store points and values.
@@ -265,21 +266,25 @@ static int converged(unsigned fdim, const double *val, const double *err,
    The buffer length will be kept <= max(max_nbuf, 1) * dim.
 
    Also allows the caller to specify an array m[dim] of starting degrees
-   for the rule, which upon return will hole the final degrees.  The
+   for the rule, which upon return will hold the final degrees.  The
    number of points in each dimension i is 2^(m[i]+1) + 1. */
    
 int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
-                      unsigned dim, const double *xmin, const double *xmax,
-		      unsigned maxEval, double reqAbsError, double reqRelError,
-		      unsigned *m,
-		      double **buf, unsigned *nbuf, unsigned max_nbuf,
-		      double *val, double *err)
+			   unsigned dim, const double *xmin, const double *xmax,
+			   unsigned maxEval,
+			   double reqAbsError, double reqRelError,
+			   error_norm norm,
+			   unsigned *m,
+			   double **buf, unsigned *nbuf, unsigned max_nbuf,
+			   double *val, double *err)
 {
      int ret = FAILURE;
      double V = 1;
      unsigned i, numEval = 0, new_nbuf;
      valcache vc = {0, NULL};
      double *val1 = NULL;
+
+     if (norm < 0 || norm > ERROR_LINF) return FAILURE; /* invalid norm */
 
      if (fdim == 0) return SUCCESS; /* nothing to do */
      if (dim > MAXDIM) return FAILURE; /* unsupported */
@@ -319,7 +324,7 @@ int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
 	  unsigned mi;
 
 	  eval_integral(vc, m, fdim, dim, V, &mi, val, err, val1);
-	  if (converged(fdim, val, err, reqAbsError, reqRelError)
+	  if (converged(fdim, val, err, reqAbsError, reqRelError, norm)
 	      || (numEval > maxEval && maxEval)) {
 	       ret = SUCCESS;
 	       goto done;
@@ -353,16 +358,17 @@ done:
 #define DEFAULT_MAX_NBUF (1U << 20)
 
 int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
-                      unsigned dim, const double *xmin, const double *xmax,
-		      unsigned maxEval, double reqAbsError, double reqRelError,
-                      double *val, double *err)
+		       unsigned dim, const double *xmin, const double *xmax,
+		       unsigned maxEval, double reqAbsError, double reqRelError,
+		       error_norm norm,
+		       double *val, double *err)
 {
      int ret;
      unsigned nbuf = 0, m[MAXDIM];
      double *buf = NULL;
      memset(m, 0, sizeof(unsigned) * dim);
      ret = padapt_integrate_v_buf(fdim, f, fdata, dim, xmin, xmax,
-				  maxEval, reqAbsError, reqRelError,
+				  maxEval, reqAbsError, reqRelError, norm,
 				  m, &buf, &nbuf, DEFAULT_MAX_NBUF, val, err);
      free(buf);
      return ret;
@@ -370,9 +376,9 @@ int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
 
 /* wrapper around non-vectorized integrand */
 typedef struct fv_data_s { integrand f; void *fdata; } fv_data;
-static void fv(unsigned ndim, unsigned npt,
-	       const double *x, void *d_,
-	       unsigned fdim, double *fval)
+static int fv(unsigned ndim, unsigned npt,
+	      const double *x, void *d_,
+	      unsigned fdim, double *fval)
 {
      fv_data *d = (fv_data *) d_;
      integrand f = d->f;
@@ -380,12 +386,15 @@ static void fv(unsigned ndim, unsigned npt,
      unsigned i;
      /* printf("npt = %u\n", npt); */
      for (i = 0; i < npt; ++i) 
-	  f(ndim, x + i*ndim, fdata, fdim, fval + i*fdim);
+	  if (f(ndim, x + i*ndim, fdata, fdim, fval + i*fdim))
+	       return FAILURE;
+     return SUCCESS;
 }
 
 int padapt_integrate(unsigned fdim, integrand f, void *fdata,
 		     unsigned dim, const double *xmin, const double *xmax,
 		     unsigned maxEval, double reqAbsError, double reqRelError,
+		     error_norm norm,
 		     double *val, double *err)
 {
      int ret;
@@ -397,7 +406,7 @@ int padapt_integrate(unsigned fdim, integrand f, void *fdata,
      memset(m, 0, sizeof(unsigned) * dim);
      ret = padapt_integrate_v_buf(
 	  fdim, fv, &d, dim, xmin, xmax, 
-	  maxEval, reqAbsError, reqRelError, 
+	  maxEval, reqAbsError, reqRelError, norm,
 	  m, &buf, &nbuf, 16 /* max_nbuf > 0 to amortize function overhead */,
 	  val, err);
      free(buf);
