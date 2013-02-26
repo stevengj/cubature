@@ -683,10 +683,11 @@ static int rule15gauss_evalError(rule *r,
 	  return FAILURE;
      
      for (k = 0; k < fdim; ++k) {
+          const double *vk = vals + k;
 	  for (iR = 0; iR < nR; ++iR) {
 	       const double halfwidth = R[iR].h.data[1];
-	       double result_gauss = vals[0] * wg[n/2 - 1];
-	       double result_kronrod = vals[0] * wgk[n - 1];
+	       double result_gauss = vk[0] * wg[n/2 - 1];
+	       double result_kronrod = vk[0] * wgk[n - 1];
 	       double result_abs = fabs(result_kronrod);
 	       double result_asc, mean, err;
 
@@ -694,19 +695,19 @@ static int rule15gauss_evalError(rule *r,
 	       npts = 1;
 	       for (j = 0; j < (n - 1) / 2; ++j) {
 		    int j2 = 2*j + 1;
-		    double v = vals[fdim*npts] + vals[fdim*npts+fdim];
+		    double v = vk[fdim*npts] + vk[fdim*npts+fdim];
 		    result_gauss += wg[j] * v;
 		    result_kronrod += wgk[j2] * v;
-		    result_abs += wgk[j2] * (fabs(vals[fdim*npts]) 
-					     + fabs(vals[fdim*npts+fdim]));
+		    result_abs += wgk[j2] * (fabs(vk[fdim*npts]) 
+					     + fabs(vk[fdim*npts+fdim]));
 		    npts += 2;
 	       }
 	       for (j = 0; j < n/2; ++j) {
 		    int j2 = 2*j;
-		    result_kronrod += wgk[j2] * (vals[fdim*npts] 
-						 + vals[fdim*npts+fdim]);
-		    result_abs += wgk[j2] * (fabs(vals[fdim*npts]) 
-					     + fabs(vals[fdim*npts+fdim]));
+		    result_kronrod += wgk[j2] * (vk[fdim*npts] 
+						 + vk[fdim*npts+fdim]);
+		    result_abs += wgk[j2] * (fabs(vk[fdim*npts]) 
+					     + fabs(vk[fdim*npts+fdim]));
 		    npts += 2;
 	       }
 	       
@@ -718,18 +719,18 @@ static int rule15gauss_evalError(rule *r,
 		  ... not completely clear to me why we don't just use
 	          fabs(result_kronrod - result_gauss) * halfwidth */
 	       mean = result_kronrod * 0.5;
-	       result_asc = wgk[n - 1] * fabs(vals[0] - mean);
+	       result_asc = wgk[n - 1] * fabs(vk[0] - mean);
 	       npts = 1;
 	       for (j = 0; j < (n - 1) / 2; ++j) {
 		    int j2 = 2*j + 1;
-		    result_asc += wgk[j2] * (fabs(vals[fdim*npts]-mean)
-					     + fabs(vals[fdim*npts+fdim]-mean));
+		    result_asc += wgk[j2] * (fabs(vk[fdim*npts]-mean)
+					     + fabs(vk[fdim*npts+fdim]-mean));
 		    npts += 2;
 	       }
 	       for (j = 0; j < n/2; ++j) {
 		    int j2 = 2*j;
-		    result_asc += wgk[j2] * (fabs(vals[fdim*npts]-mean)
-					     + fabs(vals[fdim*npts+fdim]-mean));
+		    result_asc += wgk[j2] * (fabs(vk[fdim*npts]-mean)
+					     + fabs(vk[fdim*npts+fdim]-mean));
 		    npts += 2;
 	       }
 	       err = fabs(result_kronrod - result_gauss) * halfwidth;
@@ -745,8 +746,8 @@ static int rule15gauss_evalError(rule *r,
 	       }
 	       R[iR].ee[k].err = err;
 	       
-	       /* increment vals to point to next batch of results */
-	       vals += 1;
+	       /* increment vk to point to next batch of results */
+	       vk += 15*fdim;
 	  }
      }
      return SUCCESS;
