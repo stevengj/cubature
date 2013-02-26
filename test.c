@@ -44,9 +44,9 @@
 #define VERBOSE 0
 
 #if defined(PCUBATURE)
-#  define adapt_integrate padapt_integrate
+#  define cubature pcubature
 #else
-#  define adapt_integrate hadapt_integrate
+#  define cubature hcubature
 #endif
 
 int count = 0;
@@ -298,9 +298,9 @@ int main(int argc, char **argv)
      }
 
      printf("%u-dim integral, tolerance = %g\n", dim, tol);
-     adapt_integrate(integrand_fdim, f_test, NULL, 
-		     dim, xmin, xmax, 
-		     maxEval, 0, tol, ERROR_INDIVIDUAL, val, err);
+     cubature(integrand_fdim, f_test, NULL, 
+	      dim, xmin, xmax, 
+	      maxEval, 0, tol, ERROR_INDIVIDUAL, val, err);
      for (i = 0; i < integrand_fdim; ++i) {
 	  printf("integrand %d: integral = %0.11g, est err = %g, true err = %g\n", 
 		 which_integrand[i], val[i], err[i], 

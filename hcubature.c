@@ -98,7 +98,7 @@
 
 */
 
-/* USAGE: Call adapt_integrate with your function as described in cubature.h.
+/* USAGE: Call cubature with your function as described in cubature.h.
 
 	  To compile a test program, compile cubature.c with
 	  -DTEST_INTEGRATOR as described at the end. */
@@ -891,13 +891,13 @@ static int converged(unsigned fdim, const esterr *ee,
 
 /* adaptive integration, analogous to adaptintegrator.cpp in HIntLib */
 
-static int ruleadapt_integrate(rule *r, unsigned fdim, 
-			       integrand_v f, void *fdata, 
-			       const hypercube *h, 
-			       unsigned maxEval,
-			       double reqAbsError, double reqRelError,
-			       error_norm norm,
-			       double *val, double *err, int parallel)
+static int rulecubature(rule *r, unsigned fdim, 
+			integrand_v f, void *fdata, 
+			const hypercube *h, 
+			unsigned maxEval,
+			double reqAbsError, double reqRelError,
+			error_norm norm,
+			double *val, double *err, int parallel)
 {
      unsigned numEval = 0;
      heap regions;
@@ -1010,11 +1010,11 @@ bad:
      return FAILURE;
 }
 
-static int integrate(unsigned fdim, integrand_v f, void *fdata, 
-		     unsigned dim, const double *xmin, const double *xmax, 
-		     unsigned maxEval, double reqAbsError, double reqRelError, 
-		     error_norm norm,
-		     double *val, double *err, int parallel)
+static int cubature(unsigned fdim, integrand_v f, void *fdata, 
+		    unsigned dim, const double *xmin, const double *xmax, 
+		    unsigned maxEval, double reqAbsError, double reqRelError, 
+		    error_norm norm,
+		    double *val, double *err, int parallel)
 {
      rule *r;
      hypercube h;
@@ -1038,7 +1038,7 @@ static int integrate(unsigned fdim, integrand_v f, void *fdata,
      }
      h = make_hypercube_range(dim, xmin, xmax);
      status = !h.data ? FAILURE
-	  : ruleadapt_integrate(r, fdim, f, fdata, &h,
+	  : rulecubature(r, fdim, f, fdata, &h,
 				maxEval, reqAbsError, reqRelError, norm,
 				val, err, parallel);
      destroy_hypercube(&h);
@@ -1046,23 +1046,23 @@ static int integrate(unsigned fdim, integrand_v f, void *fdata,
      return status;
 }
 
-int hadapt_integrate_v(unsigned fdim, integrand_v f, void *fdata, 
+int hcubature_v(unsigned fdim, integrand_v f, void *fdata, 
 		       unsigned dim, const double *xmin, const double *xmax, 
 		       unsigned maxEval, double reqAbsError, double reqRelError, 
 		       error_norm norm,
 		       double *val, double *err)
 {
-     return integrate(fdim, f, fdata, dim, xmin, xmax, 
-		      maxEval, reqAbsError, reqRelError, norm, val, err, 1);
+     return cubature(fdim, f, fdata, dim, xmin, xmax, 
+		     maxEval, reqAbsError, reqRelError, norm, val, err, 1);
 }
 
 #include "vwrapper.h"
 
-int hadapt_integrate(unsigned fdim, integrand f, void *fdata, 
-		     unsigned dim, const double *xmin, const double *xmax, 
-		     unsigned maxEval, double reqAbsError, double reqRelError, 
-		     error_norm norm,
-		     double *val, double *err)
+int hcubature(unsigned fdim, integrand f, void *fdata, 
+	      unsigned dim, const double *xmin, const double *xmax, 
+	      unsigned maxEval, double reqAbsError, double reqRelError, 
+	      error_norm norm,
+	      double *val, double *err)
 {
      int ret;
      fv_data d;
@@ -1070,8 +1070,8 @@ int hadapt_integrate(unsigned fdim, integrand f, void *fdata,
      if (fdim == 0) return SUCCESS; /* nothing to do */     
      
      d.f = f; d.fdata = fdata;
-     ret = integrate(fdim, fv, &d, dim, xmin, xmax, 
-		     maxEval, reqAbsError, reqRelError, norm, val, err, 0);
+     ret = cubature(fdim, fv, &d, dim, xmin, xmax, 
+		    maxEval, reqAbsError, reqRelError, norm, val, err, 0);
      return ret;
 }
 

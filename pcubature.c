@@ -289,14 +289,14 @@ static int converged(unsigned fdim, const double *vals, const double *errs,
    for the rule, which upon return will hold the final degrees.  The
    number of points in each dimension i is 2^(m[i]+1) + 1. */
    
-int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
-			   unsigned dim, const double *xmin, const double *xmax,
-			   unsigned maxEval,
-			   double reqAbsError, double reqRelError,
-			   error_norm norm,
-			   unsigned *m,
-			   double **buf, unsigned *nbuf, unsigned max_nbuf,
-			   double *val, double *err)
+int pcubature_v_buf(unsigned fdim, integrand_v f, void *fdata,
+		    unsigned dim, const double *xmin, const double *xmax,
+		    unsigned maxEval,
+		    double reqAbsError, double reqRelError,
+		    error_norm norm,
+		    unsigned *m,
+		    double **buf, unsigned *nbuf, unsigned max_nbuf,
+		    double *val, double *err)
 {
      int ret = FAILURE;
      double V = 1;
@@ -378,17 +378,17 @@ done:
 
 #define DEFAULT_MAX_NBUF (1U << 20)
 
-int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
-		       unsigned dim, const double *xmin, const double *xmax,
-		       unsigned maxEval, double reqAbsError, double reqRelError,
-		       error_norm norm,
-		       double *val, double *err)
+int pcubature_v(unsigned fdim, integrand_v f, void *fdata,
+		unsigned dim, const double *xmin, const double *xmax,
+		unsigned maxEval, double reqAbsError, double reqRelError,
+		error_norm norm,
+		double *val, double *err)
 {
      int ret;
      unsigned nbuf = 0, m[MAXDIM];
      double *buf = NULL;
      memset(m, 0, sizeof(unsigned) * dim);
-     ret = padapt_integrate_v_buf(fdim, f, fdata, dim, xmin, xmax,
+     ret = pcubature_v_buf(fdim, f, fdata, dim, xmin, xmax,
 				  maxEval, reqAbsError, reqRelError, norm,
 				  m, &buf, &nbuf, DEFAULT_MAX_NBUF, val, err);
      free(buf);
@@ -397,11 +397,11 @@ int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
 
 #include "vwrapper.h"
 
-int padapt_integrate(unsigned fdim, integrand f, void *fdata,
-		     unsigned dim, const double *xmin, const double *xmax,
-		     unsigned maxEval, double reqAbsError, double reqRelError,
-		     error_norm norm,
-		     double *val, double *err)
+int pcubature(unsigned fdim, integrand f, void *fdata,
+	      unsigned dim, const double *xmin, const double *xmax,
+	      unsigned maxEval, double reqAbsError, double reqRelError,
+	      error_norm norm,
+	      double *val, double *err)
 {
      int ret;
      unsigned nbuf = 0, m[MAXDIM];
@@ -410,7 +410,7 @@ int padapt_integrate(unsigned fdim, integrand f, void *fdata,
 
      d.f = f; d.fdata = fdata;
      memset(m, 0, sizeof(unsigned) * dim);
-     ret = padapt_integrate_v_buf(
+     ret = pcubature_v_buf(
 	  fdim, fv, &d, dim, xmin, xmax, 
 	  maxEval, reqAbsError, reqRelError, norm,
 	  m, &buf, &nbuf, 16 /* max_nbuf > 0 to amortize function overhead */,

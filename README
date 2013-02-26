@@ -97,7 +97,7 @@ The quadrature weights and points are precomputed with a program
 clencurt_gen.c and stored in a file clencurt.h.   The default
 clencurt.h file includes Clenshaw-Curtis rules up to order 8192,
 which should normally suffice for any smooth function that is not
-extremely oscillatory.  (If not, padapt_integrate will return a nonzero
+extremely oscillatory.  (If not, pcubature will return a nonzero
 result, indicating failure.)  If you need higher-order rules, you
 can either switch to the h-adaptive routine or recompile clencurt_gen
 (which requires FFTW, from www.fftw.org) and run it with a larger
@@ -113,12 +113,12 @@ file cubature.h.
 
 The central subroutine you will be calling is probably:
 
-int hadapt_integrate(unsigned fdim, integrand f, void *fdata,
-                    unsigned dim, const double *xmin, const double *xmax,
-                    unsigned maxEval, double reqAbsError, double reqRelError,
-		    error_norm norm, double *val, double *err);
+int hcubature(unsigned fdim, integrand f, void *fdata,
+              unsigned dim, const double *xmin, const double *xmax,
+              unsigned maxEval, double reqAbsError, double reqRelError,
+              error_norm norm, double *val, double *err);
 
-for h-adaptive cubature, or padapt_integrate (same arguments) for
+for h-adaptive cubature, or pcubature (same arguments) for
 p-adaptive cubature.  (See also the vectorized interface below.)
 
 This integrates a function F(x) returning a vector of FDIM
@@ -162,7 +162,7 @@ computed integral values and estimated errors, respectively.  (The
 estimated errors are based on an embedded cubature rule of lower
 order; for smooth functions, this estimate is usually conservative.)
 
-The return value of hadapt_integrate is 0 on success and nonzero if
+The return value of hcubature is 0 on success and nonzero if
 there was an error (currently, only out-of-memory situations or when
 the integrand signals an error).  For a nonzero return value, the
 contents of the VAL and ERR arrays are undefined.
@@ -176,11 +176,11 @@ Here, the input is an array X of length NDIM (the point to be
 evaluated), the output is an array FVAL of length FDIM (the vector of
 function values at the point X).  The return value should be 0 on
 success or a nonzero value if an error occurred and the integration
-is to be terminated immediately (hadapt_integrate will then return
+is to be terminated immediately (hcubature will then return
 a nonzero error code).
 
 The FDATA argument of F is equal to the FDATA argument passed to
-adapt_integrate -- this can be used by the caller to pass any
+cubature -- this can be used by the caller to pass any
 additional information through to F as needed (rather than using
 global variables, which are not re-entrant).  If F does not need any
 additional data, you can just pass FDATA = NULL and ignore the FDATA
@@ -194,12 +194,12 @@ integrand function with an array of points to evaluate, rather than a
 single point at a time.  (e.g. you may wish to evaluate the different
 points in parallel.)  This is accomplished by calling:
 
-int hadapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
-                       unsigned dim, const double *xmin, const double *xmax,
-                       unsigned maxEval, double reqAbsError, double reqRelError,
-                       error_norm norm, double *val, double *err);
+int hcubature_v(unsigned fdim, integrand_v f, void *fdata,
+                unsigned dim, const double *xmin, const double *xmax,
+                unsigned maxEval, double reqAbsError, double reqRelError,
+                error_norm norm, double *val, double *err);
 
-(and similarly for padapt_integrate_v) where all the arguments are the
+(and similarly for pcubature_v) where all the arguments are the
 same as above except that the integrand function F should now be a
 function of the form:
 

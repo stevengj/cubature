@@ -34,16 +34,14 @@ extern "C"
 {
 #endif /* __cplusplus */
 
-/* USAGE: Call adapt_integrate with your function as described below.
-
-	  To compile a test program, compile cubature.c with
-	  -DTEST_INTEGRATOR as described at the end. */
+/* USAGE: Call hcubature or pcubature with your function as described
+          in the README file. */
 
 /* a vector integrand - evaluates the function at the given point x
    (an array of length ndim) and returns the result in fval (an array
    of length fdim).   The void* parameter is there in case you have
    to pass any additional data through to your function (it corresponds
-   to the fdata parameter you pass to adapt_integrate).  Return 0 on
+   to the fdata parameter you pass to cubature).  Return 0 on
    success or nonzero to terminate the integration. */
 typedef int (*integrand) (unsigned ndim, const double *x, void *,
 			   unsigned fdim, double *fval);
@@ -80,41 +78,41 @@ typedef enum {
 /* adapative integration by partitioning the integration domain ("h-adaptive")
    and using the same fixed-degree quadrature in each subdomain, recursively,
    until convergence is achieved. */
-int hadapt_integrate(unsigned fdim, integrand f, void *fdata,
-		     unsigned dim, const double *xmin, const double *xmax, 
-		     unsigned maxEval, double reqAbsError, double reqRelError, 
-		     error_norm norm,
-		     double *val, double *err);
+int hcubature(unsigned fdim, integrand f, void *fdata,
+	      unsigned dim, const double *xmin, const double *xmax, 
+	      unsigned maxEval, double reqAbsError, double reqRelError, 
+	      error_norm norm,
+	      double *val, double *err);
 
-/* as hadapt_integrate, but vectorized integrand */
-int hadapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
-		       unsigned dim, const double *xmin, const double *xmax, 
-		       unsigned maxEval, double reqAbsError, double reqRelError, 
-		       error_norm norm,
-		       double *val, double *err);
+/* as hcubature, but vectorized integrand */
+int hcubature_v(unsigned fdim, integrand_v f, void *fdata,
+		unsigned dim, const double *xmin, const double *xmax, 
+		unsigned maxEval, double reqAbsError, double reqRelError, 
+		error_norm norm,
+		double *val, double *err);
 
 /* adaptive integration by increasing the degree of (tensor-product
    Clenshaw-Curtis) quadrature rules ("p-adaptive"), rather than
    subdividing the domain ("h-adaptive").  Possibly better for
    smooth integrands in low dimensions. */
-int padapt_integrate_v_buf(unsigned fdim, integrand_v f, void *fdata,
-			   unsigned dim, const double *xmin, const double *xmax,
-			   unsigned maxEval, 
-			   double reqAbsError, double reqRelError,
-			   error_norm norm,
-			   unsigned *m,
-			   double **buf, unsigned *nbuf, unsigned max_nbuf,
-		      double *val, double *err);
-int padapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
-		       unsigned dim, const double *xmin, const double *xmax, 
-		       unsigned maxEval, double reqAbsError, double reqRelError, 
-		       error_norm norm,
-		       double *val, double *err);
-int padapt_integrate(unsigned fdim, integrand f, void *fdata,
-		     unsigned dim, const double *xmin, const double *xmax, 
-		     unsigned maxEval, double reqAbsError, double reqRelError, 
-		     error_norm norm,
-		     double *val, double *err);
+int pcubature_v_buf(unsigned fdim, integrand_v f, void *fdata,
+		    unsigned dim, const double *xmin, const double *xmax,
+		    unsigned maxEval, 
+		    double reqAbsError, double reqRelError,
+		    error_norm norm,
+		    unsigned *m,
+		    double **buf, unsigned *nbuf, unsigned max_nbuf,
+		    double *val, double *err);
+int pcubature_v(unsigned fdim, integrand_v f, void *fdata,
+		unsigned dim, const double *xmin, const double *xmax, 
+		unsigned maxEval, double reqAbsError, double reqRelError, 
+		error_norm norm,
+		double *val, double *err);
+int pcubature(unsigned fdim, integrand f, void *fdata,
+	      unsigned dim, const double *xmin, const double *xmax, 
+	      unsigned maxEval, double reqAbsError, double reqRelError, 
+	      error_norm norm,
+	      double *val, double *err);
 
 #ifdef __cplusplus
 }  /* extern "C" */
