@@ -8,7 +8,7 @@ static int fv(unsigned ndim, unsigned npt,
      integrand f = d->f;
      void *fdata = d->fdata;
      unsigned i;
-     printf("npt = %u\n", npt);
+     /* printf("npt = %u\n", npt); */
      for (i = 0; i < npt; ++i) 
 	  if (f(ndim, x + i*ndim, fdata, fdim, fval + i*fdim))
 	       return FAILURE;

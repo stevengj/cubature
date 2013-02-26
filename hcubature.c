@@ -1,6 +1,6 @@
 /* Adaptive multidimensional integration of a vector of integrands.
  *
- * Copyright (c) 2005-2010 Steven G. Johnson
+ * Copyright (c) 2005-2013 Steven G. Johnson
  *
  * Portions (see comments) based on HIntLib (also distributed under
  * the GNU GPL, v2 or later), copyright (c) 2002-2005 Rudolf Schuerer.

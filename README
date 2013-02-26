@@ -93,13 +93,25 @@ analytic) integrands in low dimensions (particularly 1 or 2 dimensions),
 especially when high accuracy is needed.  It is not usually a good idea
 in more than 3 dimensions.
 
+The quadrature weights and points are precomputed with a program
+clencurt_gen.c and stored in a file clencurt.h.   The default
+clencurt.h file includes Clenshaw-Curtis rules up to order 8192,
+which should normally suffice for any smooth function that is not
+extremely oscillatory.  (If not, padapt_integrate will return a nonzero
+result, indicating failure.)  If you need higher-order rules, you
+can either switch to the h-adaptive routine or recompile clencurt_gen
+(which requires FFTW, from www.fftw.org) and run it with a larger
+argument m > 12 (corresponding to degree 2^(m+1) rules).
+
 -----------------------------------------------------------------------
 == Usage ==
 
-You should compile cubature.c and link it with your program, and
-#include the header file cubature.h.
+You should compile either hcubature.c or pcubature.c (or both),
+depending on whether you are using h-adaptive or p-adaptive cubature
+(or both).  Then link it with your program and #include the header
+file cubature.h.
 
-The central subroutine you will be calling is:
+The central subroutine you will be calling is probably:
 
 int hadapt_integrate(unsigned fdim, integrand f, void *fdata,
                     unsigned dim, const double *xmin, const double *xmax,
@@ -107,7 +119,7 @@ int hadapt_integrate(unsigned fdim, integrand f, void *fdata,
 		    error_norm norm, double *val, double *err);
 
 for h-adaptive cubature, or padapt_integrate (same arguments) for
-p-adaptive cubature.
+p-adaptive cubature.  (See also the vectorized interface below.)
 
 This integrates a function F(x) returning a vector of FDIM
 integrands, where x is a DIM-dimensional vector ranging from XMIN to

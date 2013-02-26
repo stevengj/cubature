@@ -1,4 +1,4 @@
-FILES = README COPYING cubature.c cubature.h test.c ChangeLog
+FILES = README COPYING pcubature.c hcubature.c cubature.h clencurt.h vwrapper.h converged.h test.c clencurt_gen.c ChangeLog
 
 # CFLAGS = -pg -O3 -fno-inline-small-functions -Wall -ansi -pedantic
 # CFLAGS = -g -Wall -ansi -pedantic
@@ -6,10 +6,10 @@ CFLAGS = -O3 -Wall -ansi -pedantic
 
 all: htest ptest
 
-htest: test.c hcubature.c cubature.h converged.c vwrapper.h
+htest: test.c hcubature.c cubature.h converged.h vwrapper.h
 	cc $(CFLAGS) -o $@ test.c hcubature.c -lm
 
-ptest: test.c pcubature.c cubature.h clencurt.h converged.c vwrapper.h
+ptest: test.c pcubature.c cubature.h clencurt.h converged.h vwrapper.h
 	cc $(CFLAGS) -DPCUBATURE -o $@ test.c pcubature.c -lm
 
 clencurt.h: clencurt_gen.c # only depend on .c file so end-users don't re-gen
