@@ -1,36 +1,44 @@
+== Cubature Package ==
+
 Multidimensional integration ("cubature") code by Steven G. Johnson
 <stevenj@alum.mit.edu>, based in part on code from the GNU Scientific
 Library (GSL) by Brian Gough and others and from the HIntLib
 numeric-integration library by Rudolf Schuerer.  Adaptive integration
-of either one integrand or a vector of integrands is supported.
+of either one integrand or a vector of integrands is supported.  Both
+h-adaptive integration (partitioning the integration domain) and
+p-adaptive integration (increasing the order of the integration rule)
+are supported (the latter being often better for smooth functions in
+low dimensions).
 
-The latest version can be downloaded from:
+=== Download and Copyright ===
 
-    http://ab-initio.mit.edu/cubature/
+The latest version can be downloaded from: http://ab-initio.mit.edu/cubature/
 
- * Copyright (c) 2005-2009 Steven G. Johnson
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
- * Portions (see comments) based on HIntLib (also distributed under
- * the GNU GPL, v2 or later), copyright (c) 2002-2005 Rudolf Schuerer.
- *      (http://www.cosy.sbg.ac.at/~rschuer/hintlib/)
- * 
- * Portions (see comments) based on GNU GSL (also distributed under
- * the GNU GPL, v2 or later), copyright (c) 1996-2000 Brian Gough.
- *      (http://www.gnu.org/software/gsl/)
+  Copyright (c) 2005-2013 Steven G. Johnson
+ 
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 2 of the License, or
+  (at your option) any later version.
+ 
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+ 
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ 
+  Portions (see comments) based on HIntLib (also distributed under
+  the GNU GPL, v2 or later), copyright (c) 2002-2005 Rudolf Schuerer.
+       (http://www.cosy.sbg.ac.at/~rschuer/hintlib/)
+  
+  Portions (see comments) based on GNU GSL (also distributed under
+  the GNU GPL, v2 or later), copyright (c) 1996-2000 Brian Gough.
+       (http://www.gnu.org/software/gsl/)
+
+=== h-adaptive cubature ===
 
 The basic algorithm is based on the adaptive cubature described in
  
@@ -73,6 +81,18 @@ as described in:
      http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.42.6638
      (1994).
 
+=== p-adaptive cubature ===
+
+The p-adaptive cubature routine uses a tensor product of
+Clenshaw-Curtis quadrature rules (using the embedded half-order rules
+for error estimation).  The degree of the rules is doubled along each
+dimension (one dimension at a time) until convergence is achieved.
+
+This is often superior to h-adaptive cubature for smooth (especially
+analytic) integrands in low dimensions (particularly 1 or 2 dimensions),
+especially when high accuracy is needed.  It is not usually a good idea
+in more than 3 dimensions.
+
 -----------------------------------------------------------------------
 Usage:
 
@@ -81,12 +101,15 @@ You should compile cubature.c and link it with your program, and
 
 The central subroutine you will be calling is:
 
-int adapt_integrate(unsigned fdim, integrand f, void *fdata,
+int hadapt_integrate(unsigned fdim, integrand f, void *fdata,
                     unsigned dim, const double *xmin, const double *xmax,
                     unsigned maxEval, double reqAbsError, double reqRelError,
-                    double *val, double *err);
+		    error_norm norm, double *val, double *err);
 
-This integrates a function F(x), returning a vector of FDIM
+for h-adaptive cubature, or padapt_integrate (same arguments) for
+p-adaptive cubature.
+
+This integrates a function F(x) returning a vector of FDIM
 integrands, where x is a DIM-dimensional vector ranging from XMIN to
 XMAX (i.e. in a hypercube XMIN[i] <= x[i] <= XMAX[i]).
 
@@ -96,22 +119,53 @@ is less than REQABSERROR (the absolute error requested), or when the
 estimated |error| is less than REQRELERROR * |integral value| (the
 relative error requested).
 
+For vector-valued integrands (FDIM > 1), NORM specifies the norm that
+is used to measure the error and determine convergence properties.
+(The NORM argument is irrelevant for FDIM<=1 and is ignored.)  Given
+vectors v and e of estimated integrals and errors therein,
+respectively, the NORM argument takes on one of the following
+enumerated constant values:
+
+* ERROR_L1, ERROR_L2, ERROR_LINF: the absolute error is measured
+as |e| and the relative error as |e|/|v|, where |...| is the L1,
+L2, or L-infinity norm, respectively.  (|x| in the L1 norm is the
+sum of the absolute values of the components, in the L2 norm is the
+root mean square of the components, and in the L-infinity norm is
+the maximum absolute value of the components)
+
+* ERROR_INDIVIDUAL: Convergence is achieved only when each integrand
+(each component of v and e) individually satisfies the requested
+error tolerances.
+
+* ERROR_PAIRED: Like ERROR_INDIVIDUAL, except that the integrands
+are grouped into consecutive pairs, with the error tolerance applied
+in an L2 sense to each pair.  This option is mainly useful for
+integrating vectors of complex numbers, where each consecutive pair
+of real integrands is the real and imaginary parts of a single
+complex integrand, and you only care about the error in the complex
+plane rather than the error in the real and imaginary parts separately.
+
 VAL and ERR are arrays of length FDIM, which upon return are the
 computed integral values and estimated errors, respectively.  (The
 estimated errors are based on an embedded cubature rule of lower
 order; for smooth functions, this estimate is usually conservative.)
 
-The return value of adapt_integrate is 0 on success and nonzero if
-there was an error (currently, only out-of-memory situations).
+The return value of hadapt_integrate is 0 on success and nonzero if
+there was an error (currently, only out-of-memory situations or when
+the integrand signals an error).  For a nonzero return value, the
+contents of the VAL and ERR arrays are undefined.
 
 The integrand function F should be a function of the form:
 
-void F(unsigned ndim, const double *x, void *fdata,
-       unsigned fdim, double *fval);
+int F(unsigned ndim, const double *x, void *fdata,
+      unsigned fdim, double *fval);
 
 Here, the input is an array X of length NDIM (the point to be
 evaluated), the output is an array FVAL of length FDIM (the vector of
-function values at the point X).
+function values at the point X).  The return value should be 0 on
+success or a nonzero value if an error occurred and the integration
+is to be terminated immediately (hadapt_integrate will then return
+a nonzero error code).
 
 The FDATA argument of F is equal to the FDATA argument passed to
 adapt_integrate -- this can be used by the caller to pass any
@@ -128,22 +182,26 @@ integrand function with an array of points to evaluate, rather than a
 single point at a time.  (e.g. you may wish to evaluate the different
 points in parallel.)  This is accomplished by calling:
 
-int adapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
-                      unsigned dim, const double *xmin, const double *xmax,
-                      unsigned maxEval, double reqAbsError, double reqRelError,
-                      double *val, double *err);
+int hadapt_integrate_v(unsigned fdim, integrand_v f, void *fdata,
+                       unsigned dim, const double *xmin, const double *xmax,
+                       unsigned maxEval, double reqAbsError, double reqRelError,
+                       error_norm norm, double *val, double *err);
 
-where all the arguments are the same as above except that the
-integrand function F should now be a function of the form:
+(and similarly for padapt_integrate_v) where all the arguments are the
+same as above except that the integrand function F should now be a
+function of the form:
 
-void F(unsigned ndim, unsigned npts, const double *x, void *fdata,
-       unsigned fdim, double *fval);
+int F(unsigned ndim, unsigned npts, const double *x, void *fdata,
+      unsigned fdim, double *fval);
 
 Now, x is not a single point, but an array of npts points, and upon
 return the values of all fdim integrands at all npts points should be
 stored in fval.  In particular, x[i*ndim + j] is the j-th coordinate
 of the i-th point (i < npts and j < ndim), and the k-th function
 evaluation (k < fdim) for the i-th point is returned in fval[k*npt + i].
+
+Again, the return value should be 0 on success or nonzero to terminate
+the integration immediately (e.g. if an error occurred).
 
 The size of npts will vary with the dimensionality of the problem;
 higher-dimensional problems will have (exponentially) larger npts,
@@ -158,11 +216,13 @@ Test cases:
 To compile a test case, just compile cubature.c while #defining
 TEST_INTEGRATOR, e.g. (on Unix or GNU/Linux) via:
 
- cc -DTEST_INTEGRATOR -o cubature_test cubature.c -lm
+ cc -DHCUBATURE -o htest hcubature.c test.c -lm
+ cc -DPCUBATURE -o ptest pcubature.c test.c -lm
 
 The usage is then:
 
-    ./cubature_test <dim> <tol> <integrand> <maxeval>
+    ./htest <dim> <tol> <integrand> <maxeval>
+    ./ptest <dim> <tol> <integrand> <maxeval>
 
 where <dim> = # dimensions, <tol> = relative tolerance, <integrand> is
 0-7 for one of eight possible test integrands (see below) and
@@ -182,7 +242,7 @@ The different test integrands are:
 
 For example:
 
-    ./cubature_test 3 1e-5 4
+    ./htest 3 1e-5 4
 
 integrates the Gaussian function (4) to a desired relative error
 tolerance of 1e-5 in 3 dimensions.  The output is:

@@ -4,12 +4,12 @@ FILES = README COPYING cubature.c cubature.h test.c ChangeLog
 # CFLAGS = -g -Wall -ansi -pedantic
 CFLAGS = -O3 -Wall -ansi -pedantic
 
-all: hcubature pcubature
+all: htest ptest
 
-hcubature: test.c hcubature.c cubature.h converged.c
+htest: test.c hcubature.c cubature.h converged.c
 	cc $(CFLAGS) -o $@ test.c hcubature.c -lm
 
-pcubature: test.c pcubature.c cubature.h clencurt.h converged.c
+ptest: test.c pcubature.c cubature.h clencurt.h converged.c
 	cc $(CFLAGS) -DPCUBATURE -o $@ test.c pcubature.c -lm
 
 clencurt.h: clencurt_gen.c # only depend on .c file so end-users don't re-gen
@@ -28,7 +28,7 @@ dist:
 	(d=cubature-`date +%Y%m%d`; rm -rf $$d $$d.tgz; mkdir $$d; cp $(FILES) $$d; tar czf $$d.tgz $$d; rm -rf $$d)
 
 clean:
-	rm -f hcubature scubature pcubature clencurt_gen
+	rm -f htest ptest clencurt_gen
 
 maintainer-clean:
 	make clean

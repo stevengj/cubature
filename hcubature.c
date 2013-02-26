@@ -902,6 +902,7 @@ static int ruleadapt_integrate(rule *r, unsigned fdim,
      unsigned nR_alloc = 0;
      esterr *ee = NULL;
 
+     if (fdim <= 1) norm = ERROR_INDIVIDUAL; /* norm is irrelevant */
      if (norm < 0 || norm > ERROR_LINF) return FAILURE; /* invalid norm */
 
      regions = heap_alloc(1, fdim);
