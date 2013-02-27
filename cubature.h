@@ -48,7 +48,7 @@ typedef int (*integrand) (unsigned ndim, const double *x, void *,
 
 /* a vector integrand of a vector of npt points: x[i*ndim + j] is the
    j-th coordinate of the i-th point, and the k-th function evaluation
-   for the i-th point is returned in fval[k*npt + i].  Return 0 on success
+   for the i-th point is returned in fval[i*fdim + k].  Return 0 on success
    or nonzero to terminate the integration. */
 typedef int (*integrand_v) (unsigned ndim, size_t npt,
 			    const double *x, void *,
