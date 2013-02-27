@@ -1026,7 +1026,7 @@ static int cubature(unsigned fdim, integrand_v f, void *fdata,
      
      if (fdim == 0) /* nothing to do */ return SUCCESS;
      if (dim == 0) { /* trivial integration */
-	  f(0, 1, xmin, fdata, fdim, val);
+	  if (f(0, 1, xmin, fdata, fdim, val)) return FAILURE;
 	  for (i = 0; i < fdim; ++i) err[i] = 0;
 	  return SUCCESS;
      }

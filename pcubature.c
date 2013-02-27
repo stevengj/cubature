@@ -312,7 +312,7 @@ int pcubature_v_buf(unsigned fdim, integrand_v f, void *fdata,
      if (fdim == 0) return SUCCESS; /* nothing to do */
      if (dim > MAXDIM) return FAILURE; /* unsupported */
      if (dim == 0) { /* trivial case */
-	  f(0, 1, xmin, fdata, fdim, val);
+	  if (f(0, 1, xmin, fdata, fdim, val)) return FAILURE;
           for (i = 0; i < fdim; ++i) err[i] = 0;
           return SUCCESS;
      }
