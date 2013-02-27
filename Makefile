@@ -14,7 +14,7 @@ ptest: test.c pcubature.c cubature.h clencurt.h converged.h vwrapper.h
 
 clencurt.h: clencurt_gen.c # only depend on .c file so end-users don't re-gen
 	make clencurt_gen
-	./clencurt_gen 12 > $@
+	./clencurt_gen 19 > $@
 
 clencurt_gen: clencurt_gen.c
 	cc $(CFLAGS) -o $@ clencurt_gen.c -lfftw3l -lm

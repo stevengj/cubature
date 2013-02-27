@@ -94,14 +94,15 @@ especially when high accuracy is needed.  It is not usually a good idea
 in more than 3 dimensions.
 
 The quadrature weights and points are precomputed with a program
-clencurt_gen.c and stored in a file clencurt.h.   The default
-clencurt.h file includes Clenshaw-Curtis rules up to order 8192,
-which should normally suffice for any smooth function that is not
-extremely oscillatory.  (If not, pcubature will return a nonzero
-result, indicating failure.)  If you need higher-order rules, you
-can either switch to the h-adaptive routine or recompile clencurt_gen
-(which requires FFTW, from www.fftw.org) and run it with a larger
-argument m > 12 (corresponding to degree 2^(m+1) rules).
+clencurt_gen.c and stored in a file clencurt.h.  The default
+clencurt.h file includes Clenshaw-Curtis rules up to order 2^20 (about
+10^6) along each dimension, which should normally suffice for any
+smooth function that is not extremely oscillatory.  (If not, pcubature
+will return a nonzero result, indicating failure.)  If you need
+higher-order rules, you can either switch to the h-adaptive routine or
+recompile clencurt_gen (which requires FFTW, from www.fftw.org) and
+run it with a larger argument m > 19 (corresponding to degree 2^(m+1)
+rules).
 
 -----------------------------------------------------------------------
 == Usage ==
