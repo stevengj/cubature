@@ -61,7 +61,7 @@ typedef struct cacheval_s {
 
 /* array of ncache cachevals c[i] */
 typedef struct valcache_s {
-     unsigned ncache;
+     size_t ncache;
      cacheval *c;
 } valcache;
 
@@ -69,7 +69,7 @@ static void free_cachevals(valcache *v)
 {
      if (!v) return;
      if (v->c) {
-	  unsigned i;
+	  size_t i;
 	  for (i = 0; i < v->ncache; ++i)
 	       free(v->c[i].val);
 	  free(v->c);
@@ -84,11 +84,11 @@ static void free_cachevals(valcache *v)
    add each point to the buffer buf, evaluating all at once whenever the
    buffer is full or when we are done */
 static int compute_cacheval(const unsigned *m, unsigned mi, 
-			    double *val, unsigned *vali,
+			    double *val, size_t *vali,
 			    unsigned fdim, integrand_v f, void *fdata,
 			    unsigned dim, unsigned id, double *p,
 			    const double *xmin, const double *xmax,
-			    double *buf, unsigned nbuf, unsigned *ibuf)
+			    double *buf, size_t nbuf, size_t *ibuf)
 {
      if (id == dim) { /* add point to buffer of points */
 	  memcpy(buf + (*ibuf)++ * dim, p, sizeof(double) * dim);
@@ -129,9 +129,10 @@ static int compute_cacheval(const unsigned *m, unsigned mi,
      return SUCCESS;
 }
 
-static unsigned num_cacheval(const unsigned *m, unsigned mi, unsigned dim)
+static size_t num_cacheval(const unsigned *m, unsigned mi, unsigned dim)
 {
-     unsigned i, nval = 1;
+     unsigned i;
+     size_t nval = 1;
      for (i = 0; i < dim; ++i) {
 	  if (i == mi)
 	       nval *= m[i] == 0 ? 2 : (1 << (m[i]));
@@ -145,10 +146,10 @@ static int add_cacheval(valcache *vc,
 			const unsigned *m, unsigned mi,
 			unsigned fdim, integrand_v f, void *fdata,
 			unsigned dim, const double *xmin, const double *xmax,
-			double *buf, unsigned nbuf)
+			double *buf, size_t nbuf)
 {
-     unsigned ic = vc->ncache;
-     unsigned nval, vali = 0, ibuf = 0;
+     size_t ic = vc->ncache;
+     size_t nval, vali = 0, ibuf = 0;
      double p[MAXDIM];
 
      vc->c = (cacheval *) realloc(vc->c, sizeof(cacheval) * ++(vc->ncache));
@@ -183,7 +184,7 @@ static unsigned eval(const unsigned *cm, unsigned cmi, double *cval,
 		 unsigned fdim, unsigned dim, unsigned id,
 		 double weight, double *val)
 {
-     unsigned voff = 0; /* amount caller should offset cval array afterwards */
+     size_t voff = 0; /* amount caller should offset cval array afterwards */
      if (id == dim) {
 	  unsigned i;
 	  for (i = 0; i < fdim; ++i) val[i] += cval[i] * weight;
@@ -227,7 +228,7 @@ static void evals(valcache vc, const unsigned *m, unsigned md,
 		  unsigned fdim, unsigned dim, 
 		  double V, double *val)
 {
-     unsigned i;
+     size_t i;
 
      memset(val, 0, sizeof(double) * fdim);
      for (i = 0; i < vc.ncache; ++i) {
@@ -291,16 +292,17 @@ static int converged(unsigned fdim, const double *vals, const double *errs,
    
 int pcubature_v_buf(unsigned fdim, integrand_v f, void *fdata,
 		    unsigned dim, const double *xmin, const double *xmax,
-		    unsigned maxEval,
+		    size_t maxEval,
 		    double reqAbsError, double reqRelError,
 		    error_norm norm,
 		    unsigned *m,
-		    double **buf, unsigned *nbuf, unsigned max_nbuf,
+		    double **buf, size_t *nbuf, size_t max_nbuf,
 		    double *val, double *err)
 {
      int ret = FAILURE;
      double V = 1;
-     unsigned i, numEval = 0, new_nbuf;
+     size_t numEval = 0, new_nbuf;
+     unsigned i;
      valcache vc = {0, NULL};
      double *val1 = NULL;
 
@@ -380,12 +382,13 @@ done:
 
 int pcubature_v(unsigned fdim, integrand_v f, void *fdata,
 		unsigned dim, const double *xmin, const double *xmax,
-		unsigned maxEval, double reqAbsError, double reqRelError,
+		size_t maxEval, double reqAbsError, double reqRelError,
 		error_norm norm,
 		double *val, double *err)
 {
      int ret;
-     unsigned nbuf = 0, m[MAXDIM];
+     size_t nbuf = 0;
+     unsigned m[MAXDIM];
      double *buf = NULL;
      memset(m, 0, sizeof(unsigned) * dim);
      ret = pcubature_v_buf(fdim, f, fdata, dim, xmin, xmax,
@@ -399,12 +402,13 @@ int pcubature_v(unsigned fdim, integrand_v f, void *fdata,
 
 int pcubature(unsigned fdim, integrand f, void *fdata,
 	      unsigned dim, const double *xmin, const double *xmax,
-	      unsigned maxEval, double reqAbsError, double reqRelError,
+	      size_t maxEval, double reqAbsError, double reqRelError,
 	      error_norm norm,
 	      double *val, double *err)
 {
      int ret;
-     unsigned nbuf = 0, m[MAXDIM];
+     size_t nbuf = 0;
+     unsigned m[MAXDIM];
      double *buf = NULL;
      fv_data d;
 

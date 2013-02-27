@@ -1,6 +1,6 @@
 /* vectorized wrapper around non-vectorized integrands */
 typedef struct fv_data_s { integrand f; void *fdata; } fv_data;
-static int fv(unsigned ndim, unsigned npt,
+static int fv(unsigned ndim, size_t npt,
 	      const double *x, void *d_,
 	      unsigned fdim, double *fval)
 {

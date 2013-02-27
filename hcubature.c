@@ -465,7 +465,8 @@ static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, voi
      const double ratio = (lambda2 * lambda2) / (lambda4 * lambda4);
 
      rule75genzmalik *r = (rule75genzmalik *) r_;
-     unsigned i, j, iR, dim = r_->dim, npts = 0;
+     unsigned i, j, iR, dim = r_->dim;
+     size_t npts = 0;
      double *diff, *pts, *vals;
 
      if (alloc_rule_pts(r_, nR)) return FAILURE;
@@ -651,7 +652,8 @@ static int rule15gauss_evalError(rule *r,
 	  0.204432940075298892414161999234649,
 	  0.209482141084727828012999174891714
      };
-     unsigned j, k, iR, npts = 0;
+     unsigned j, k, iR;
+     size_t npts = 0;
      double *pts, *vals;
 
      if (alloc_rule_pts(r, nR)) return FAILURE;
@@ -770,19 +772,19 @@ typedef region heap_item;
 #define KEY(hi) ((hi).errmax)
 
 typedef struct {
-     unsigned n, nalloc;
+     size_t n, nalloc;
      heap_item *items;
      unsigned fdim;
      esterr *ee; /* array of length fdim of the total integrand & error */
 } heap;
 
-static void heap_resize(heap *h, unsigned nalloc)
+static void heap_resize(heap *h, size_t nalloc)
 {
      h->nalloc = nalloc;
      h->items = (heap_item *) realloc(h->items, sizeof(heap_item) * nalloc);
 }
 
-static heap heap_alloc(unsigned nalloc, unsigned fdim)
+static heap heap_alloc(size_t nalloc, unsigned fdim)
 {
      heap h;
      unsigned i;
@@ -833,9 +835,9 @@ static int heap_push(heap *h, heap_item hi)
      return SUCCESS;
 }
 
-static int heap_push_many(heap *h, unsigned ni, heap_item *hi)
+static int heap_push_many(heap *h, size_t ni, heap_item *hi)
 {
-     unsigned i;
+     size_t i;
      for (i = 0; i < ni; ++i)
 	  if (heap_push(h, hi[i])) return FAILURE;
      return SUCCESS;
@@ -895,16 +897,16 @@ static int converged(unsigned fdim, const esterr *ee,
 static int rulecubature(rule *r, unsigned fdim, 
 			integrand_v f, void *fdata, 
 			const hypercube *h, 
-			unsigned maxEval,
+			size_t maxEval,
 			double reqAbsError, double reqRelError,
 			error_norm norm,
 			double *val, double *err, int parallel)
 {
-     unsigned numEval = 0;
+     size_t numEval = 0;
      heap regions;
      unsigned i, j;
      region *R = NULL; /* array of regions to evaluate */
-     unsigned nR_alloc = 0;
+     size_t nR_alloc = 0;
      esterr *ee = NULL;
 
      if (fdim <= 1) norm = ERROR_INDIVIDUAL; /* norm is irrelevant */
@@ -958,7 +960,7 @@ static int rulecubature(rule *r, unsigned fdim,
 		  out of N is only O(K log N), much better than the
 		  O(N) cost of the Bull and Freeman algorithm if K <<
 		  N, and it is also much simpler.] */
-	       unsigned nR = 0;
+	       size_t nR = 0;
 	       for (j = 0; j < fdim; ++j) ee[j] = regions.ee[j];
 	       do {
 		    if (nR + 2 > nR_alloc) {
@@ -1013,7 +1015,7 @@ bad:
 
 static int cubature(unsigned fdim, integrand_v f, void *fdata, 
 		    unsigned dim, const double *xmin, const double *xmax, 
-		    unsigned maxEval, double reqAbsError, double reqRelError, 
+		    size_t maxEval, double reqAbsError, double reqRelError, 
 		    error_norm norm,
 		    double *val, double *err, int parallel)
 {
@@ -1048,10 +1050,10 @@ static int cubature(unsigned fdim, integrand_v f, void *fdata,
 }
 
 int hcubature_v(unsigned fdim, integrand_v f, void *fdata, 
-		       unsigned dim, const double *xmin, const double *xmax, 
-		       unsigned maxEval, double reqAbsError, double reqRelError, 
-		       error_norm norm,
-		       double *val, double *err)
+                unsigned dim, const double *xmin, const double *xmax, 
+                size_t maxEval, double reqAbsError, double reqRelError, 
+                error_norm norm,
+                double *val, double *err)
 {
      return cubature(fdim, f, fdata, dim, xmin, xmax, 
 		     maxEval, reqAbsError, reqRelError, norm, val, err, 1);
@@ -1061,7 +1063,7 @@ int hcubature_v(unsigned fdim, integrand_v f, void *fdata,
 
 int hcubature(unsigned fdim, integrand f, void *fdata, 
 	      unsigned dim, const double *xmin, const double *xmax, 
-	      unsigned maxEval, double reqAbsError, double reqRelError, 
+	      size_t maxEval, double reqAbsError, double reqRelError, 
 	      error_norm norm,
 	      double *val, double *err)
 {

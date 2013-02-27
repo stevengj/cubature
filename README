@@ -204,7 +204,7 @@ int hcubature_v(unsigned fdim, integrand_v f, void *fdata,
 same as above except that the integrand function F should now be a
 function of the form:
 
-int F(unsigned ndim, unsigned npts, const double *x, void *fdata,
+int F(unsigned ndim, size_t npts, const double *x, void *fdata,
       unsigned fdim, double *fval);
 
 Now, x is not a single point, but an array of npts points, and upon

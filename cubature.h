@@ -44,13 +44,13 @@ extern "C"
    to the fdata parameter you pass to cubature).  Return 0 on
    success or nonzero to terminate the integration. */
 typedef int (*integrand) (unsigned ndim, const double *x, void *,
-			   unsigned fdim, double *fval);
+                          unsigned fdim, double *fval);
 
 /* a vector integrand of a vector of npt points: x[i*ndim + j] is the
    j-th coordinate of the i-th point, and the k-th function evaluation
    for the i-th point is returned in fval[k*npt + i].  Return 0 on success
    or nonzero to terminate the integration. */
-typedef int (*integrand_v) (unsigned ndim, unsigned npt,
+typedef int (*integrand_v) (unsigned ndim, size_t npt,
 			    const double *x, void *,
 			    unsigned fdim, double *fval);
 
@@ -80,14 +80,14 @@ typedef enum {
    until convergence is achieved. */
 int hcubature(unsigned fdim, integrand f, void *fdata,
 	      unsigned dim, const double *xmin, const double *xmax, 
-	      unsigned maxEval, double reqAbsError, double reqRelError, 
+	      size_t maxEval, double reqAbsError, double reqRelError, 
 	      error_norm norm,
 	      double *val, double *err);
 
 /* as hcubature, but vectorized integrand */
 int hcubature_v(unsigned fdim, integrand_v f, void *fdata,
 		unsigned dim, const double *xmin, const double *xmax, 
-		unsigned maxEval, double reqAbsError, double reqRelError, 
+		size_t maxEval, double reqAbsError, double reqRelError, 
 		error_norm norm,
 		double *val, double *err);
 
@@ -97,20 +97,20 @@ int hcubature_v(unsigned fdim, integrand_v f, void *fdata,
    smooth integrands in low dimensions. */
 int pcubature_v_buf(unsigned fdim, integrand_v f, void *fdata,
 		    unsigned dim, const double *xmin, const double *xmax,
-		    unsigned maxEval, 
+		    size_t maxEval, 
 		    double reqAbsError, double reqRelError,
 		    error_norm norm,
 		    unsigned *m,
-		    double **buf, unsigned *nbuf, unsigned max_nbuf,
+		    double **buf, size_t *nbuf, size_t max_nbuf,
 		    double *val, double *err);
 int pcubature_v(unsigned fdim, integrand_v f, void *fdata,
 		unsigned dim, const double *xmin, const double *xmax, 
-		unsigned maxEval, double reqAbsError, double reqRelError, 
+		size_t maxEval, double reqAbsError, double reqRelError, 
 		error_norm norm,
 		double *val, double *err);
 int pcubature(unsigned fdim, integrand f, void *fdata,
 	      unsigned dim, const double *xmin, const double *xmax, 
-	      unsigned maxEval, double reqAbsError, double reqRelError, 
+	      size_t maxEval, double reqAbsError, double reqRelError, 
 	      error_norm norm,
 	      double *val, double *err);
 
