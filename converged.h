@@ -9,7 +9,7 @@
      switch (norm) {
 	 case ERROR_INDIVIDUAL:
 	      for (j = 0; j < fdim; ++j)
-		   if (ERR(j) > reqAbsError && ERR(j) > VAL(j)*reqRelError)
+		   if (ERR(j) > reqAbsError && ERR(j) > fabs(VAL(j))*reqRelError)
 			return 0;
 	      return 1;
 	      
@@ -27,7 +27,7 @@
 			return 0;
 	      }
 	      if (j < fdim) /* fdim is odd, do last dimension individually */
-		   if (ERR(j) > reqAbsError && ERR(j) > VAL(j)*reqRelError)
+		   if (ERR(j) > reqAbsError && ERR(j) > fabs(VAL(j))*reqRelError)
 			return 0;
 	      return 1;
 
