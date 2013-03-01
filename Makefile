@@ -35,7 +35,7 @@ dll32:
 	i586-mingw32msvc-gcc -c -O3 hcubature.c
 	i586-mingw32msvc-gcc -c -O3 pcubature.c
 	i586-mingw32msvc-gcc -shared -o libcubature32.dll \
-	   -Wl,--export-all-symbols hcubature.o pcubature.o
+	   hcubature.o pcubature.o
 	make clean
 
 dll64:
@@ -43,7 +43,7 @@ dll64:
 	amd64-mingw32msvc-gcc -c -O3 hcubature.c
 	amd64-mingw32msvc-gcc -c -O3 pcubature.c
 	amd64-mingw32msvc-gcc -shared -o libcubature64.dll \
-	   -Wl,--export-all-symbols hcubature.o pcubature.o
+	   hcubature.o pcubature.o
 	make clean
 
 maintainer-clean:
