@@ -28,7 +28,23 @@ dist:
 	(d=cubature-`date +%Y%m%d`; rm -rf $$d $$d.tgz; mkdir $$d; cp $(FILES) $$d; tar czf $$d.tgz $$d; rm -rf $$d)
 
 clean:
-	rm -f htest ptest clencurt_gen
+	rm -f htest ptest clencurt_gen *.o
+
+dll32:
+	make clean
+	i586-mingw32msvc-gcc -c -O3 hcubature.c
+	i586-mingw32msvc-gcc -c -O3 pcubature.c
+	i586-mingw32msvc-gcc -shared -o libcubature32.dll \
+	   -Wl,--export-all-symbols hcubature.o pcubature.o
+	make clean
+
+dll64:
+	make clean
+	amd64-mingw32msvc-gcc -c -O3 hcubature.c
+	amd64-mingw32msvc-gcc -c -O3 pcubature.c
+	amd64-mingw32msvc-gcc -shared -o libcubature64.dll \
+	   -Wl,--export-all-symbols hcubature.o pcubature.o
+	make clean
 
 maintainer-clean:
 	make clean
