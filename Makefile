@@ -46,6 +46,20 @@ dll64:
 	   hcubature.o pcubature.o
 	make clean
 
+dylib64:
+	make clean
+	gcc -fPIC -c -O3 hcubature.c
+	gcc -fPIC -c -O3 pcubature.c
+	gcc -dynamiclib hcubature.o pcubature.o -o libcubature64.dylib
+	make clean
+
+dylib32:
+	make clean
+	gcc -m32 -fPIC -c -O3 hcubature.c
+	gcc -m32 -fPIC -c -O3 pcubature.c
+	gcc -m32 -dynamiclib hcubature.o pcubature.o -o libcubature32.dylib
+	make clean
+
 maintainer-clean:
 	make clean
 	rm -f clencurt.h
