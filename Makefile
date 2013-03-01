@@ -25,7 +25,7 @@ ChangeLog:
 dist:
 	rm -f ChangeLog
 	make ChangeLog
-	(d=cubature-`date +%Y%m%d`; rm -rf $$d $$d.tgz; mkdir $$d; cp $(FILES) $$d; tar czf $$d.tgz $$d; rm -rf $$d)
+	(d=cubature-`date +%Y%m%d`; rm -rf cubature $$d.tgz; mkdir cubature; cp $(FILES) cubature; tar czf $$d.tgz cubature; rm -rf cubature)
 
 clean:
 	rm -f htest ptest clencurt_gen *.o
