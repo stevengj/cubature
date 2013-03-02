@@ -1,4 +1,4 @@
-FILES = README COPYING pcubature.c hcubature.c cubature.h clencurt.h vwrapper.h converged.h test.c clencurt_gen.c ChangeLog
+FILES = README COPYING pcubature.c hcubature.c cubature.h clencurt.h vwrapper.h converged.h test.c clencurt_gen.c ChangeLog NEWS
 
 # CFLAGS = -pg -O3 -fno-inline-small-functions -Wall -ansi -pedantic
 # CFLAGS = -g -Wall -ansi -pedantic
@@ -25,7 +25,7 @@ ChangeLog:
 dist:
 	rm -f ChangeLog
 	make ChangeLog
-	(d=cubature-`date +%Y%m%d`; rm -rf cubature $$d.tgz; mkdir cubature; cp $(FILES) cubature; tar czf $$d.tgz cubature; rm -rf cubature)
+	(d=cubature-`head -n 1 NEWS | cut -d' ' -f2`; rm -rf $$d $$d.tgz; mkdir $$d; cp $(FILES) $$d; tar czf $$d.tgz $$d; rm -rf $$d)
 
 clean:
 	rm -f htest ptest clencurt_gen *.o
@@ -34,30 +34,28 @@ dll32:
 	make clean
 	i586-mingw32msvc-gcc -c -O3 hcubature.c
 	i586-mingw32msvc-gcc -c -O3 pcubature.c
-	i586-mingw32msvc-gcc -shared -o libcubature32.dll \
-	   hcubature.o pcubature.o
+	i586-mingw32msvc-gcc -shared -o libcubature32-`head -n 1 NEWS | cut -d' ' -f2`.dll hcubature.o pcubature.o
 	make clean
 
 dll64:
 	make clean
 	amd64-mingw32msvc-gcc -c -O3 hcubature.c
 	amd64-mingw32msvc-gcc -c -O3 pcubature.c
-	amd64-mingw32msvc-gcc -shared -o libcubature64.dll \
-	   hcubature.o pcubature.o
+	amd64-mingw32msvc-gcc -shared -o libcubature64-`head -n 1 NEWS | cut -d' ' -f2`.dll hcubature.o pcubature.o
 	make clean
 
 dylib64:
 	make clean
 	gcc -fPIC -c -O3 hcubature.c
 	gcc -fPIC -c -O3 pcubature.c
-	gcc -dynamiclib hcubature.o pcubature.o -o libcubature64.dylib
+	gcc -dynamiclib hcubature.o pcubature.o -o libcubature64-`head -n 1 NEWS | cut -d' ' -f2`.dylib
 	make clean
 
 dylib32:
 	make clean
 	gcc -m32 -fPIC -c -O3 hcubature.c
 	gcc -m32 -fPIC -c -O3 pcubature.c
-	gcc -m32 -dynamiclib hcubature.o pcubature.o -o libcubature32.dylib
+	gcc -m32 -dynamiclib hcubature.o pcubature.o -o libcubature32-`head -n 1 NEWS | cut -d' ' -f2-.dylib
 	make clean
 
 maintainer-clean:
