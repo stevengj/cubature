@@ -29,6 +29,8 @@
 #ifndef CUBATURE_H
 #define CUBATURE_H
 
+#include <stdlib.h> /* for size_t */
+
 #ifdef __cplusplus
 extern "C"
 {
