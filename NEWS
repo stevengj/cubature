@@ -1,3 +1,7 @@
+Version 1.0.1
+
+* cubature.h header now includes <stdlib.h>, to make sure size_t is defined
+
 Version 1.0
 
 * Many API changes compared to pre-1.0 versions:
