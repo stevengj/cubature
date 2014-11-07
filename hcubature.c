@@ -192,6 +192,7 @@ static region make_region(const hypercube *h, unsigned fdim)
      R.splitDim = 0;
      R.fdim = fdim;
      R.ee = R.h.data ? (esterr *) malloc(sizeof(esterr) * fdim) : NULL;
+     R.errmax = HUGE_VAL;
      return R;
 }
 
