@@ -39,9 +39,9 @@ dll32:
 
 dll64:
 	make clean
-	amd64-mingw32msvc-gcc -c -O3 hcubature.c
-	amd64-mingw32msvc-gcc -c -O3 pcubature.c
-	amd64-mingw32msvc-gcc -shared -o libcubature64-`head -n 1 NEWS | cut -d' ' -f2`.dll hcubature.o pcubature.o
+	x86_64-w64-mingw32-gcc -c -O3 hcubature.c
+	x86_64-w64-mingw32-gcc -c -O3 pcubature.c
+	x86_64-w64-mingw32-gcc -shared -o libcubature64-`head -n 1 NEWS | cut -d' ' -f2`.dll hcubature.o pcubature.o
 	make clean
 
 dylib64:
@@ -55,7 +55,7 @@ dylib32:
 	make clean
 	gcc -m32 -fPIC -c -O3 hcubature.c
 	gcc -m32 -fPIC -c -O3 pcubature.c
-	gcc -m32 -dynamiclib hcubature.o pcubature.o -o libcubature32-`head -n 1 NEWS | cut -d' ' -f2-.dylib
+	gcc -m32 -dynamiclib hcubature.o pcubature.o -o libcubature32-`head -n 1 NEWS | cut -d' ' -f2-`.dylib
 	make clean
 
 maintainer-clean:
