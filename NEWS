@@ -1,3 +1,8 @@
+Version 1.0.2
+
+* Fix memory leak in hcubature on BSD (and MacOS) systems.  Thanks to
+  Nicolas Tessore (@ntessore) for the bug report.
+
 Version 1.0.1
 
 * cubature.h header now includes <stdlib.h>, to make sure size_t is defined
