@@ -26,28 +26,28 @@ dll32:
 	make clean
 	i586-mingw32msvc-gcc -c -O3 hcubature.c
 	i586-mingw32msvc-gcc -c -O3 pcubature.c
-	i586-mingw32msvc-gcc -shared -o libcubature32-`head -n 1 NEWS | cut -d' ' -f2`.dll hcubature.o pcubature.o
+	i586-mingw32msvc-gcc -shared -o libcubature32-`grep '##' NEWS.md |head -n 1 |cut -d' ' -f3`.dll hcubature.o pcubature.o
 	make clean
 
 dll64:
 	make clean
 	x86_64-w64-mingw32-gcc -c -O3 hcubature.c
 	x86_64-w64-mingw32-gcc -c -O3 pcubature.c
-	x86_64-w64-mingw32-gcc -shared -o libcubature64-`head -n 1 NEWS | cut -d' ' -f2`.dll hcubature.o pcubature.o
+	x86_64-w64-mingw32-gcc -shared -o libcubature64-`grep '##' NEWS.md |head -n 1 |cut -d' ' -f3`.dll hcubature.o pcubature.o
 	make clean
 
 dylib64:
 	make clean
 	gcc -fPIC -c -O3 hcubature.c
 	gcc -fPIC -c -O3 pcubature.c
-	gcc -dynamiclib hcubature.o pcubature.o -o libcubature64-`head -n 1 NEWS | cut -d' ' -f2`.dylib
+	gcc -dynamiclib hcubature.o pcubature.o -o libcubature64-`grep '##' NEWS.md |head -n 1 |cut -d' ' -f3`.dylib
 	make clean
 
 dylib32:
 	make clean
 	gcc -m32 -fPIC -c -O3 hcubature.c
 	gcc -m32 -fPIC -c -O3 pcubature.c
-	gcc -m32 -dynamiclib hcubature.o pcubature.o -o libcubature32-`head -n 1 NEWS | cut -d' ' -f2-`.dylib
+	gcc -m32 -dynamiclib hcubature.o pcubature.o -o libcubature32-`grep '##' NEWS.md |head -n 1 |cut -d' ' -f3`.dylib
 	make clean
 
 maintainer-clean:
