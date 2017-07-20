@@ -19,14 +19,6 @@ clencurt.h: clencurt_gen.c # only depend on .c file so end-users don't re-gen
 clencurt_gen: clencurt_gen.c
 	cc $(CFLAGS) -o $@ clencurt_gen.c -lfftw3l -lm
 
-ChangeLog:
-	darcs changes --summary > $@
-
-dist:
-	rm -f ChangeLog
-	make ChangeLog
-	(d=cubature-`head -n 1 NEWS | cut -d' ' -f2`; rm -rf $$d $$d.tgz; mkdir $$d; cp $(FILES) $$d; tar czf $$d.tgz $$d; rm -rf $$d)
-
 clean:
 	rm -f htest ptest clencurt_gen *.o
 
