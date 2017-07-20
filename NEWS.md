@@ -3,6 +3,10 @@
 The following are the main changes in each subsequent tagged release
 of the [cubature code by Steven G. Johnson](README.md).
 
+## Version 1.0.3
+
+* Transferred files and documentation to [Github](https://github.com/stevengj/cubature).
+
 ## Version 1.0.2
 
 * Fix memory leak in `hcubature` on BSD (and MacOS) systems.  Thanks to

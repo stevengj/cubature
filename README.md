@@ -71,12 +71,9 @@ Download
 --------
 
 The current version of the code can be downloaded from
-[github repository](https://github.com/stevengj/cubature) or from:
+[github repository](https://github.com/stevengj/cubature).
 
--   [cubature-1.0.2.tgz](http://ab-initio.mit.edu/cubature/cubature-1.0.2.tgz)
-
-a [gzipped](https://en.wikipedia.org/wiki/Gzip) [tar](https://en.wikipedia.org/wiki/Tar_(computing))
-file. This unpacks to a directory containing stand-alone `hcubature.c` and `pcubature.c` files
+Either way, you get a directory containing stand-alone `hcubature.c` and `pcubature.c` files
 (along with a couple of private header files) that you can compile and
 link into your program for h-adaptive and p-adaptive integration,
 respectively, and a header file `cubature.h` that you `#include`, as
