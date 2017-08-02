@@ -565,12 +565,15 @@ static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, voi
      for (iR = 0; iR < nR; ++iR) {
 	  double maxdiff = 0;
 	  unsigned dimDiffMax = 0;
+	  const double *halfwidth = R[iR].h.data + dim;
 
 	  for (i = 0; i < dim; ++i)
 	       if (diff[iR*dim + i] > maxdiff) {
 		    maxdiff = diff[iR*dim + i];
 		    dimDiffMax = i;
 	       }
+	       else if (diff[iR*dim + i] == maxdiff && halfwidth[i] > halfwidth[dimDiffMax])
+                   dimDiffMax = i;
 	  R[iR].splitDim = dimDiffMax;
      }
      return SUCCESS;
