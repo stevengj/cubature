@@ -288,8 +288,8 @@ static int eval_regions(unsigned nR, region *R,
      unsigned iR;
      if (nR == 0) return SUCCESS; /* nothing to evaluate */
      if (r->evalError(r, R->fdim, f, fdata, nR, R)) return FAILURE;
-     for (iR = 0; iR < nR; ++iR)
-	  R[iR].errmax = errMax(R->fdim, R[iR].ee);
+     /*for (iR = 0; iR < nR; ++iR)
+	  R[iR].errmax = errMax(R->fdim, R[iR].ee);*/
      return SUCCESS;
 }
 
@@ -563,17 +563,22 @@ static int rule75genzmalik_evalError(rule *r_, unsigned fdim, integrand_v f, voi
 
      /* figure out dimension to split: */
      for (iR = 0; iR < nR; ++iR) {
-	  double maxdiff = 0;
+	  double deltaf, maxdiff = 0;
 	  unsigned dimDiffMax = 0;
 	  const double *halfwidth = R[iR].h.data + dim;
 
-	  for (i = 0; i < dim; ++i)
-	       if (diff[iR*dim + i] > maxdiff) {
+	  R[iR].errmax = errMax(R->fdim, R[iR].ee);
+
+	  deltaf = 0.0001 * ee / R[iR].h.vol;
+	  for (i = 0; i < dim; ++i) {
+	       double delta = diff[iR*dim + i] - maxdiff;
+	       if (delta > deltaf) {
 		    maxdiff = diff[iR*dim + i];
 		    dimDiffMax = i;
 	       }
-	       else if (diff[iR*dim + i] == maxdiff && halfwidth[i] > halfwidth[dimDiffMax])
+	       else if (fabs(delta) < deltaf && halfwidth[i] > halfwidth[dimDiffMax])
                    dimDiffMax = i;
+	  }
 	  R[iR].splitDim = dimDiffMax;
      }
      return SUCCESS;
@@ -751,6 +756,7 @@ static int rule15gauss_evalError(rule *r,
 		    if (min_err > err) err = min_err;
 	       }
 	       R[iR].ee[k].err = err;
+	       R[iR].errmax = err;
 	       
 	       /* increment vk to point to next batch of results */
 	       vk += 15*fdim;
