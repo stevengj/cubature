@@ -353,7 +353,7 @@ To compile a test programs, just compile `hcubature.c` and/or
 GNU/Linux) via:
 
 ```
-cc -o htest test.c hcubature.c -l
+cc -o htest test.c hcubature.c -lm
 cc -o ptest -DPCUBATURE test.c pcubature.c -lm
 ```
 
