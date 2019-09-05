@@ -88,7 +88,7 @@ you compile that file with `-DHCUBATURE` or `-DPCUBATURE` and link with
 
 B. Narasimhan wrote a [GNU R](w:GNU_R "wikilink") interface, which can
 be downloaded here:
-[<http://cran.r-project.org/web/packages/cubature/index.html>](http://cran.r-project.org/web/packages/cubature/index.html).
+[<http://cran.r-project.org/web/packages/cubature/index.html>](http://cran.r-project.org/web/packages/cubature/index.html).   Jonathan Schilling ported the code to Java: https://github.com/jonathanschilling/Cubature
 
 A [Julia](http://julialang.org/) interface can be obtained from
 [Cubature.jl](https://github.com/stevengj/Cubature.jl). A Python
