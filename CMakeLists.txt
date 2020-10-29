@@ -5,7 +5,10 @@ project( cubature )
 add_library( cubature SHARED 
     hcubature.c
     pcubature.c)
-
+target_include_directories( cubature PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:.>)
+  
 add_executable( htest test.c )
 target_link_libraries( htest cubature m )
 
