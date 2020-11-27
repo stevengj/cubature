@@ -104,7 +104,7 @@ double f2 (unsigned dim, const double *x, void *params)
 	  sum1 += dx1 * dx1;
 	  sum2 += dx2 * dx2;
      }
-     return 0.5 * pow (K_2_SQRTPI / (2. * a), dim) 
+     return 0.5 * pow (K_2_SQRTPI / (2. * a), dim)
 	  * (exp (-sum1 / (a * a)) + exp (-sum2 / (a * a)));
 }
 
@@ -187,6 +187,14 @@ int f_test(unsigned dim, const double *x, void *data_,
 	 case 7:
 	      val = morokoff(dim, x, &fdata);
 	      break;
+	 case 8: /* from HCubature.jl#4 */
+		  if (dim != 3) {
+			fprintf(stderr, "test 8 requires dim == 3\n");
+			exit(EXIT_FAILURE);
+		  }
+		  val = x[0]*0.2 * (x[2]-0.5)*0.4 * sin(x[1] * 6.283185307179586);
+		  val = 1 + val*val;
+	 	  break;
 	 default:
 	      fprintf(stderr, "unknown integrand %d\n", which_integrand[j]);
 	      exit(EXIT_FAILURE);
@@ -258,7 +266,7 @@ int main(int argc, char **argv)
      dim = argc > 1 ? atoi(argv[1]) : 2;
      tol = argc > 2 ? atof(argv[2]) : 1e-2;
      maxEval = argc > 4 ? atoi(argv[4]) : 0;
-     
+
      /* parse: e.g. "x/y/z" is treated as fdim = 3, which_integrand={x,y,z} */
      if (argc <= 3) {
 	  integrand_fdim = 1;
@@ -279,7 +287,7 @@ int main(int argc, char **argv)
 	       if (argv[3][i] == '/')
 		    which_integrand[++j] = 0;
 	       else if (isdigit(argv[3][i]))
-		    which_integrand[j] = 
+		    which_integrand[j] =
 			 which_integrand[j]*10 + argv[3][i] - '0';
 	       else {
 		    fprintf(stderr, "invalid which_integrand \"%s\"", argv[3]);
@@ -298,12 +306,12 @@ int main(int argc, char **argv)
      }
 
      printf("%u-dim integral, tolerance = %g\n", dim, tol);
-     cubature(integrand_fdim, f_test, NULL, 
-	      dim, xmin, xmax, 
+     cubature(integrand_fdim, f_test, NULL,
+	      dim, xmin, xmax,
 	      maxEval, 0, tol, ERROR_INDIVIDUAL, val, err);
      for (i = 0; i < integrand_fdim; ++i) {
-	  printf("integrand %d: integral = %0.11g, est err = %g, true err = %g\n", 
-		 which_integrand[i], val[i], err[i], 
+	  printf("integrand %d: integral = %0.11g, est err = %g, true err = %g\n",
+		 which_integrand[i], val[i], err[i],
 		 fabs(val[i] - exact_integral(which_integrand[i], dim, xmax)));
      }
      printf("#evals = %d\n", count);
