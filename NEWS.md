@@ -3,6 +3,10 @@
 The following are the main changes in each subsequent tagged release
 of the [cubature code by Steven G. Johnson](README.md).
 
+## Version 1.0.4
+
+* Fix hang in `hcubature` for certain integrands [#14](https://github.com/stevengj/cubature/pull/14).
+
 ## Version 1.0.3
 
 * Transferred files and documentation to [Github](https://github.com/stevengj/cubature).
