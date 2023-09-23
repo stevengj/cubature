@@ -74,7 +74,7 @@ The current version of the code can be downloaded from
 [github repository](https://github.com/stevengj/cubature), and the
 latest "official" version can be obtained from:
 
-* [cubature v1.0.3](https://github.com/stevengj/cubature/releases/tag/v1.0.3)
+* [cubature v1.0.4](https://github.com/stevengj/cubature/releases/tag/v1.0.4)
 
 Either way, you get a directory containing stand-alone `hcubature.c` and `pcubature.c` files
 (along with a couple of private header files) that you can compile and
@@ -93,7 +93,7 @@ be downloaded here:
 A [Julia](http://julialang.org/) interface can be obtained from
 [Cubature.jl](https://github.com/stevengj/Cubature.jl). A Python
 [cubature.py interface](https://github.com/saullocastro/cubature)
-written by Saullo Castro is also available.
+written by Saullo G. P. Castro is also available.
 
 Usage
 -----
